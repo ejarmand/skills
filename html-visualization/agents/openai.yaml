@@ -1,0 +1,4 @@
+interface:
+  display_name: "HTML Visualizations"
+  short_description: "Build and visually iterate HTML diagrams"
+  default_prompt: "Use $html-visualization to build an HTML visualization and iterate on it with Playwright screenshots."
