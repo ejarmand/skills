@@ -10,7 +10,7 @@ Run `cursor-agent` from a checkout of the target repository and give it the issu
 Use `cursor-grok-4.5-high` by default:
 
 ```bash
-cursor-agent -p --force --trust \
+cursor-agent -p --auto-review --trust \
   --model cursor-grok-4.5-high \
   "Review ISSUE_OR_PR and publish your code review on GitHub. If the authenticated GitHub user authored the PR, leave a normal comment instead of approving or requesting changes."
 ```
