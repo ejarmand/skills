@@ -1,6 +1,7 @@
 ---
 name: cursor-code-review
 description: Use Cursor Grok 4.5 through the headless Cursor Agent CLI to review a GitHub pull request, or the implementation associated with a GitHub issue, and publish the result through GitHub CLI. Use for a sharp second-pass code review; Cursor should submit a review for another author's PR and leave a normal comment when reviewing its authenticated user's own PR.
+disable-model-invocation: true
 ---
 
 # Cursor Code Review
