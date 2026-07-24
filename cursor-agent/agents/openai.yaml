@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cursor Agent"
+  short_description: "Run and resume Cursor CLI coding sessions"
+  default_prompt: "Use $cursor-agent to run this task through Cursor Agent and preserve the session ID for follow-up work."
