@@ -1,4 +1,0 @@
-interface:
-  display_name: "Codex Adopt Session"
-  short_description: "Resume a Codex session as a delegated worker"
-  default_prompt: "Use $codex-adopt-session to resume a prior Codex session as a delegated worker for this task."
