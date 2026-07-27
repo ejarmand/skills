@@ -47,11 +47,16 @@ review its own implementation session and explain why.
 gh auth status
 gh repo view --json nameWithOwner,defaultBranchRef
 gh_user="$(gh api user --jq .login)"
+
+codex login status          # if Codex is implementing or reviewing
+cursor-agent status --format json   # if Cursor is reviewing
 ```
 
-Confirm the implementer and reviewer CLIs are authenticated per their skills:
-`codex-agent` for Codex, `cursor-agent` for Cursor. If any is unauthenticated,
-stop and ask the user to log in.
+If any CLI is unauthenticated, stop and ask the user to run `codex login`,
+`cursor-agent login`, or `gh auth login`. Never print or embed a token. These
+CLIs evolve, so treat installed `--help` as authoritative over the commands
+below. The sibling `codex-agent` and `cursor-agent` skills, when present, carry
+deeper guidance on sessions and sandboxes, but this skill does not require them.
 
 Resolve the target to a PR on a branch:
 
@@ -113,9 +118,26 @@ claude -p --session-id "$impl_session" --permission-mode acceptEdits \
 
 Later rallies resume it with `claude -p --resume "$impl_session"`.
 
-Codex implementer: follow `codex-agent` — `codex exec --json --sandbox
-workspace-write -C <repo>`, capture `thread_id` from the `thread.started`
-event, and resume with `codex exec ... resume "$impl_session"`.
+Codex implementer, first rally:
+
+```bash
+codex exec --json --sandbox workspace-write -C /absolute/path/to/repo \
+  "Implement the change for PR #N in this checkout. Scope: SCOPE. Commit your work with a clear message. Do not push, merge, edit outside the scope, or spawn more agents. Report changed files and the checks you ran."
+```
+
+Capture `impl_session` from the first event, `{"type":"thread.started",
+"thread_id":"..."}`, the moment it appears. Resume on later rallies — global
+options go **before** `resume`, and omitting `--json` loses the event stream:
+
+```bash
+codex exec --json --sandbox workspace-write -C /absolute/path/to/repo \
+  resume "$impl_session" "Address the triaged findings below. FINDINGS"
+```
+
+Require a successful exit and a terminal `turn.completed`; treat `turn.failed`,
+`error`, a nonzero exit, or a mismatched thread ID as a failed rally. Never
+resume one session concurrently, and never add
+`--dangerously-bypass-approvals-and-sandbox` to make a run unattended.
 
 Give the implementer the objective, the permitted scope, the required
 verification, and — from rally 2 on — the triaged findings. Never let it push,
@@ -145,7 +167,16 @@ cursor-agent -p --output-format json --mode plan --trust \
   "Review the diff of PR #N against its base in this checkout. Report only concrete defects introduced by this change — correctness, security, data loss, broken contracts, missing tests for changed behavior. For each: severity, file:line, the failure it causes, and a fix. Make no edits and no GitHub calls. End with the verdict line."
 ```
 
-Codex reviewer, per `codex-agent`, with `--sandbox read-only`.
+Codex reviewer — a **different** `thread_id` than the Codex implementer, always:
+
+```bash
+codex exec --json --sandbox read-only -C /absolute/path/to/repo \
+  resume "$codex_review_session" \
+  "Review the diff of PR #N against its base in this checkout. Report only concrete defects introduced by this change — correctness, security, data loss, broken contracts, missing tests for changed behavior. For each: severity, file:line, the failure it causes, and a fix. Make no changes. End with the verdict line."
+```
+
+Drop `resume "$codex_review_session"` on rally 1 and record the `thread_id` the
+run reports.
 
 Claude reviewer (only if the user overrides the defaults, since the implementer
 is normally Claude): `claude -p --permission-mode plan`.
