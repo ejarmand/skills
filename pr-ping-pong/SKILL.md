@@ -97,19 +97,32 @@ without one, a base branch that advances mid-run silently changes what every
 reviewer sees.
 
 ```bash
-read -r base_ref base_oid head_oid <<<"$(gh pr view N \
-  --json baseRefName,baseRefOid,headRefOid \
-  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')"
+pr_meta="$(gh pr view N --json baseRefName,baseRefOid,headRefOid \
+  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')" ||
+  { echo "gh pr view N failed" >&2; exit 1; }
+read -r base_ref base_oid head_oid <<<"$pr_meta"
+[ -n "$base_ref" ] && [ -n "$base_oid" ] && [ -n "$head_oid" ] ||
+  { echo "incomplete base/head metadata for PR N: $pr_meta" >&2; exit 1; }
 
-git -C "$checkout" fetch origin "$base_ref"
+git -C "$checkout" fetch origin "$base_ref" ||
+  { echo "fetch of $base_ref failed" >&2; exit 1; }
 git -C "$checkout" cat-file -e "${base_oid}^{commit}" ||
-  { echo "base $base_oid missing after fetching $base_ref — base moved or was force-pushed" >&2; exit 1; }
+  { echo "base $base_oid is not present after fetching $base_ref" >&2; exit 1; }
 ```
 
-Record `base_ref`, `base_oid`, and `head_oid` in the rally log. If the base OID
-is absent after the fetch, the base moved: re-resolve it, log the change, and say
-so in the report — findings from earlier rallies were measured against a
-different base.
+Record `base_ref`, `base_oid`, and `head_oid` in the rally log.
+
+A missing base object stops the run — that is the whole contract, and there is no
+recovery branch that continues past it. The check is narrow on purpose: it says
+the commit GitHub named as the base is not reachable from the ref you just
+fetched, and nothing more. It does **not** diagnose a force-push. An ordinary
+fast-forward leaves the old base commit reachable and fetchable, so a base that
+advances between rallies normally passes this check with a new `base_oid`;
+failure means something rewrote or detached that history, or `gh` and the remote
+disagree. Re-run the resolve step once — `baseRefOid` may simply have changed
+between the two calls — and if it fails again, stop and bring it to the user with
+the OID and ref in the report. Do not review against a base you could not
+materialize.
 
 Record the PR author. Agents push under the user's credentials, so the PR is
 normally authored by `$gh_user`, and **GitHub rejects approve and
@@ -199,19 +212,32 @@ matches. The base branch can advance and the head can be pushed to from
 elsewhere between rallies; reviewing a tree that is not the one you just pushed
 produces findings against code nobody will merge.
 
+Each step fails closed on its own. A bare sequence would leave only the last
+command's exit status, so a failed fetch or a missing base object would be masked
+by the comparison that follows it:
+
 ```bash
-read -r base_ref base_oid head_oid <<<"$(gh pr view N \
-  --json baseRefName,baseRefOid,headRefOid \
-  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')"
-git -C "$checkout" fetch origin "$base_ref"
-git -C "$checkout" cat-file -e "${base_oid}^{commit}"   # exact base present
-test "$(git -C "$checkout" rev-parse HEAD)" = "$head_oid"
+pr_meta="$(gh pr view N --json baseRefName,baseRefOid,headRefOid \
+  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')" ||
+  { echo "gh pr view N failed" >&2; exit 1; }
+read -r base_ref base_oid head_oid <<<"$pr_meta"
+[ -n "$base_ref" ] && [ -n "$base_oid" ] && [ -n "$head_oid" ] ||
+  { echo "incomplete base/head metadata for PR N: $pr_meta" >&2; exit 1; }
+
+git -C "$checkout" fetch origin "$base_ref" ||
+  { echo "fetch of $base_ref failed" >&2; exit 1; }
+git -C "$checkout" cat-file -e "${base_oid}^{commit}" ||
+  { echo "base $base_oid is not present after fetching $base_ref" >&2; exit 1; }
+test "$(git -C "$checkout" rev-parse HEAD)" = "$head_oid" ||
+  { echo "checkout HEAD is not the head $head_oid pushed in step 2" >&2; exit 1; }
 ```
 
 `HEAD` must equal the `headRefOid` you pushed in step 2. On a mismatch, stop the
-rally and report it — do not review, and do not force the branch back. A changed
-`base_oid` is not fatal: record the new one and note in the log which base each
-rally was reviewed against.
+rally and report it — do not review, and do not force the branch back. A `base_oid`
+that differs from last rally's is not itself a failure: the base advanced, so
+record the new one and note in the log which base each rally was reviewed
+against. The base failure that stops the rally is the `cat-file` one, and it
+means what Preflight says it means.
 
 Run reviewers **concurrently in the background** — they are independent, and
 serializing them doubles every rally's wall clock. Reviewers are read-only: they

@@ -35,7 +35,8 @@ viz_dir=/abs/dir/containing/viz
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$viz_dir" >/dev/null 2>&1 &
 server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null' EXIT
+printf '%s %s\n' "$server_pid" "$port" >"SHOT_DIR/server.pid"
+trap 'kill "$server_pid" 2>/dev/null; rm -f "SHOT_DIR/server.pid"' EXIT
 url="http://127.0.0.1:$port/viz.html"
 
 curl --retry 5 --retry-connrefused -fsS "$url" -o /dev/null ||
@@ -54,6 +55,21 @@ Then **view `SHOT_DIR/viz.png`** for evaluation.
   the shell ends, so the server lives exactly as long as the render pass that
   needs it. Re-run the whole block for each iteration; the browser session and
   the screenshot directory persist across passes.
+- `server.pid` records the PID and port so an interrupted pass — one killed
+  before its trap ran — is still recoverable. A stale file is the normal case,
+  not an error: the PID may be gone, or reused by an unrelated process, so
+  confirm the process is still your server before signalling it.
+
+  ```bash
+  read -r pid port <"SHOT_DIR/server.pid" 2>/dev/null || exit 0   # nothing left behind
+  case "$(ps -p "$pid" -o args= 2>/dev/null)" in
+    *"http.server $port"*) kill "$pid" ;;
+    "") : ;;                                                      # already exited
+    *) echo "pid $pid is not the viz server — leaving it alone" >&2 ;;
+  esac
+  rm -f "SHOT_DIR/server.pid"
+  ```
+
 - The port is chosen by binding port 0 and releasing it, so another process can
   in principle claim it first. The `curl` check is what proves *your* server is
   the one answering — treat its failure as a real error, not a race to retry
@@ -74,4 +90,4 @@ Fix the biggest problem, re-screenshot the same viewport, compare. **Stop when t
 
 - If composition is hard to explore in code (a tricky metaphor or dense layout), generate a reference image first, then translate it to HTML.
 - Keep the HTML in the requested project location; screenshots are evaluation artifacts and belong in the screenshot directory.
-- When done, `playwright-cli -s=html-viz close` and `rm -rf "SHOT_DIR"`. The trap already stopped the server; if a render pass was interrupted before its trap ran, kill that recorded PID. Report where the file lives, what you visually verified, and any known limitations.
+- When done, `playwright-cli -s=html-viz close` and `rm -rf "SHOT_DIR"`. The trap already stopped the server; if a render pass was interrupted before its trap ran, run the `server.pid` recovery above first — `rm -rf` on the screenshot directory would otherwise discard the only record of the orphaned PID. Report where the file lives, what you visually verified, and any known limitations.
