@@ -7,6 +7,9 @@ description: Build, revise, and evaluate browser-rendered HTML visualizations fo
 
 Build the visualization in code, render it in a real browser, and judge it from screenshots. Optimize for an accurate, legible visual model and a tight build-render-critique loop.
 
+## pitfalls
+- This visualizations are pedagogical/informational, not marketing
+- If there are existing text docs, they were inadequate, make sure this is an improvement in infomration clarity.
 ## Plan
 
 - Name the audience and the main questions the visualization must answer. That answer is your stop rule.
