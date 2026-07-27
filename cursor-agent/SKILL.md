@@ -22,7 +22,7 @@ cursor-agent status --format json
 
 If authentication is missing, ask the user to run `cursor-agent login`, or use `CURSOR_API_KEY` when the user has already arranged it. Never print or embed an API key in a command.
 
-Use `cursor-agent models` when the user requests a particular model. Otherwise omit `--model` and use the account default rather than hard-coding a model name.
+Use `cursor-agent models` (or `cursor-agent --list-models`) when the user requests a particular model. Otherwise omit `--model` and use the account default rather than hard-coding a model name.
 
 ## Choose the execution mode
 
@@ -40,6 +40,8 @@ For a headless task with structured progress:
 cursor-agent -p --output-format stream-json --auto-review --trust \
   "Inspect the repository and implement TASK. Verify the result."
 ```
+
+`--auto-review` auto-runs tool calls its classifier deems safe and prompts for the rest. In non-interactive `-p` mode there is no one to answer that prompt, so a run that needs approval can stall. For genuinely unattended work that must run any command, add `--force` (see below) rather than relying on `--auto-review` alone.
 
 Use the least authority suitable for the task:
 
@@ -125,7 +127,7 @@ Keep using the same session for refinements that depend on prior context. Start 
 
 ## Monitor and verify
 
-Keep a long-running invocation attached and inspect new output at intervals appropriate to the task; do not restart it merely because it is quiet. Check at least often enough to surface approval prompts or failures promptly.
+Run a long invocation in the background and poll its output (or the NDJSON log) at intervals appropriate to the task; do not restart it merely because it is quiet. Check at least often enough to surface approval prompts or failures promptly. When running from an interactive terminal instead, keep the invocation attached and inspect new output on the same cadence.
 
 On completion:
 
@@ -134,4 +136,6 @@ On completion:
 3. Run task-appropriate tests or checks if Cursor did not already do so.
 4. Report the outcome, verification, and session ID.
 
-If authentication fails, distinguish it from a network-denied sandbox. When a necessary `cursor-agent` or `gh` command fails because sandbox networking is unavailable, rerun it with the environment's required network escalation instead of treating the failure as bad credentials.
+### Sandbox and network failures
+
+Distinguish an auth failure from a network-denied sandbox before reporting one as the other. When a `cursor-agent` (or `gh`) command fails because sandbox networking is unavailable, rerun it with the environment's required network escalation rather than treating the failure as bad credentials.
