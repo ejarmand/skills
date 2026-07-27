@@ -5,11 +5,8 @@ description: Build, revise, and evaluate browser-rendered HTML visualizations fo
 
 # HTML Visualizations
 
-Build the visualization in code, render it in a real browser, and judge it from screenshots. Optimize for an accurate, legible visual model and a tight build-render-critique loop.
+Build the visualization in code, render it in a real browser, and judge it from screenshots. Prefer pedagogical clarity over marketing polish, and only add a visualization when it improves on existing documentation.
 
-## pitfalls
-- This visualizations are pedagogical/informational, not marketing
-- If there are existing text docs, they were inadequate, make sure this is an improvement in infomration clarity.
 ## Plan
 
 - Name the audience and the main questions the visualization must answer. That answer is your stop rule.
@@ -19,82 +16,34 @@ Build the visualization in code, render it in a real browser, and judge it from 
 
 ## Build and render
 
-Prefer a standalone HTML file. Serve it over HTTP — `file://` URLs are blocked by the browser daemon.
-
-Create the screenshot directory once, outside the project, and print it:
+Prefer a standalone HTML file. Serve it over HTTP because the browser daemon blocks `file://` URLs. Run this as one shell block so the variables and cleanup trap remain active:
 
 ```bash
-mktemp -d -t html-viz-XXXXXX
-```
-
-Each Bash call is a fresh shell, so variables do not carry over — substitute the
-printed path literally wherever `SHOT_DIR` appears below, and quote it.
-
-Then render. Bind to a free port rather than a fixed one, and fail fast if the
-server did not come up or the port is serving something else:
-
-```bash
+set -e
 viz_dir=/abs/dir/containing/viz
+shot_dir="$(mktemp -d -t html-viz-XXXXXX)"
 port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$viz_dir" >/dev/null 2>&1 &
 server_pid=$!
-printf '%s %s\n' "$server_pid" "$port" >"SHOT_DIR/server.pid"
-trap 'kill "$server_pid" 2>/dev/null; rm -f "SHOT_DIR/server.pid"' EXIT
+trap 'kill "$server_pid" 2>/dev/null' EXIT
 url="http://127.0.0.1:$port/viz.html"
 
-curl --retry 5 --retry-connrefused -fsS "$url" -o /dev/null ||
-  { echo "no server serving $url" >&2; exit 1; }
-kill -0 "$server_pid" 2>/dev/null ||
-  { echo "http.server (pid $server_pid) exited" >&2; exit 1; }
-
+curl --retry 5 --retry-connrefused -fsS "$url" -o /dev/null
 playwright-cli -s=html-viz open --browser=chromium "$url"
-playwright-cli -s=html-viz resize 1440 900   # default viewport unless the user specifies one
-playwright-cli -s=html-viz screenshot --filename="SHOT_DIR/viz.png"
+playwright-cli -s=html-viz resize 1440 900
+playwright-cli -s=html-viz screenshot --filename="$shot_dir/viz.png"
+echo "$shot_dir/viz.png"
 ```
 
-Then **view `SHOT_DIR/viz.png`** for evaluation.
+View the printed screenshot path. Re-run the block after changes, using the same viewport for comparison.
 
-- Run the block above as a single command: the `EXIT` trap stops the server when
-  the shell ends, so the server lives exactly as long as the render pass that
-  needs it. Re-run the whole block for each iteration; the browser session and
-  the screenshot directory persist across passes.
-- `server.pid` records the PID and port so an interrupted pass — one killed
-  before its trap ran — is still recoverable. A stale file is the normal case,
-  not an error: the PID may be gone, or reused by an unrelated process, so
-  confirm the process is still your server before signalling it.
-
-  ```bash
-  # No pid file is the normal case; the branch is optional so cleanup below
-  # still runs either way.
-  if read -r pid port <"SHOT_DIR/server.pid" 2>/dev/null; then
-    case "$(ps -p "$pid" -o args= 2>/dev/null)" in
-      *"http.server $port"*) kill "$pid" ;;
-      "") : ;;                                                    # already exited
-      *) echo "pid $pid is not the viz server — leaving it alone" >&2 ;;
-    esac
-    rm -f "SHOT_DIR/server.pid"
-  fi
-  rm -rf "SHOT_DIR"
-  ```
-
-- The port is chosen by binding port 0 and releasing it, so another process can
-  in principle claim it first. The `curl` check is what proves *your* server is
-  the one answering — treat its failure as a real error, not a race to retry
-  around.
-- Pass `--browser=chromium` on `open`. Without it the CLI targets the `chrome` channel, which is often not installed even though Playwright's bundled Chromium is; the daemon then dies with `Chromium distribution 'chrome' is not found`. `chromium` is a valid value despite being absent from `--help`.
-- Use the named session (`-s=html-viz`) on every command so a concurrent browser session can't interfere.
-- `playwright-cli console` after load and after interactions to catch runtime/render errors. A 404 for `/favicon.ico` is expected noise from the local server.
-- `playwright-cli snapshot` to inspect DOM structure when diagnosing a layout problem.
-- If `open` fails, check the daemon error before reinstalling anything. `playwright-cli install-browser --list` shows what is already present; a bare `install-browser` can abort on host-library validation (`libgtk-4`, gstreamer, …) that needs root, which is a separate problem from browser selection.
+- Pass `--browser=chromium` on `open`; the default `chrome` channel is often unavailable.
+- Use the named session on every command so concurrent browser sessions cannot interfere.
+- Check `playwright-cli console` after load and interactions; a missing `/favicon.ico` is expected noise.
+- Use `playwright-cli snapshot` when diagnosing layout or DOM structure.
 
 ## Critique and iterate
 
-From the screenshot, check in order: (1) accuracy — entities, labels, directions, groupings are right; (2) reading path — start point, sequence, and main takeaway are immediately obvious; (3) defects — clipping, overlap, broken connectors, unreadable text, stray scrolling; (4) contrast and color-independent meaning.
+Check accuracy, reading path, clipping or overlap, legibility, scrolling, contrast, and color-independent meaning. Fix the largest defect and re-screenshot. Stop when the visualization answers the target question with no meaningful defect.
 
-Fix the biggest problem, re-screenshot the same viewport, compare. **Stop when the screenshot answers the target question with no meaningful defect**.
-
-## Notes
-
-- If composition is hard to explore in code (a tricky metaphor or dense layout), generate a reference image first, then translate it to HTML.
-- Keep the HTML in the requested project location; screenshots are evaluation artifacts and belong in the screenshot directory.
-- When done, `playwright-cli -s=html-viz close`, then run the `server.pid` recovery block above — after its optional PID branch, it always removes the screenshot directory. Report where the file lives, what you visually verified, and any known limitations.
+When done, close the browser session, remove the printed screenshot directory, and report the HTML location, what you verified, and any known limitations.

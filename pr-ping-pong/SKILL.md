@@ -90,40 +90,6 @@ place afterward so the run can be resumed.
 Claude and Cursor commands below take no working-directory option, so run them
 from `checkout`; pass `checkout` to Codex via `-C`.
 
-Once a PR exists — immediately for a PR target, after rally 1 opens the draft for
-an issue target — resolve and record the base it will merge into. A review of
-"the diff against the base" is only meaningful against a *named* base commit;
-without one, a base branch that advances mid-run silently changes what every
-reviewer sees.
-
-```bash
-pr_meta="$(gh pr view N --json baseRefName,baseRefOid,headRefOid \
-  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')" ||
-  { echo "gh pr view N failed" >&2; exit 1; }
-read -r base_ref base_oid head_oid <<<"$pr_meta"
-[ -n "$base_ref" ] && [ -n "$base_oid" ] && [ -n "$head_oid" ] ||
-  { echo "incomplete base/head metadata for PR N: $pr_meta" >&2; exit 1; }
-
-git -C "$checkout" fetch origin "$base_ref" ||
-  { echo "fetch of $base_ref failed" >&2; exit 1; }
-git -C "$checkout" cat-file -e "${base_oid}^{commit}" ||
-  { echo "base $base_oid is not present after fetching $base_ref" >&2; exit 1; }
-```
-
-Record `base_ref`, `base_oid`, and `head_oid` in the rally log.
-
-A missing base object stops the run — that is the whole contract, and there is no
-recovery branch that continues past it. The check is narrow on purpose: it says
-the commit GitHub named as the base is not reachable from the ref you just
-fetched, and nothing more. It does **not** diagnose a force-push. An ordinary
-fast-forward leaves the old base commit reachable and fetchable, so a base that
-advances between rallies normally passes this check with a new `base_oid`;
-failure means something rewrote or detached that history, or `gh` and the remote
-disagree. Re-run the resolve step once — `baseRefOid` may simply have changed
-between the two calls — and if it fails again, stop and bring it to the user with
-the OID and ref in the report. Do not review against a base you could not
-materialize.
-
 Record the PR author. Agents push under the user's credentials, so the PR is
 normally authored by `$gh_user`, and **GitHub rejects approve and
 request-changes on your own PR** — then publish every review as a comment. Use
@@ -207,37 +173,21 @@ unpushed or unverified state wastes a full rally.
 
 ### 3. Review
 
-Re-resolve base and head **before every review rally**, and confirm the checkout
-matches. The base branch can advance and the head can be pushed to from
-elsewhere between rallies; reviewing a tree that is not the one you just pushed
-produces findings against code nobody will merge.
-
-Each step fails closed on its own. A bare sequence would leave only the last
-command's exit status, so a failed fetch or a missing base object would be masked
-by the comparison that follows it:
+Immediately before each review rally, pin the exact base and head and confirm the
+checkout matches. Run this as one shell block:
 
 ```bash
-pr_meta="$(gh pr view N --json baseRefName,baseRefOid,headRefOid \
-  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')" ||
-  { echo "gh pr view N failed" >&2; exit 1; }
-read -r base_ref base_oid head_oid <<<"$pr_meta"
-[ -n "$base_ref" ] && [ -n "$base_oid" ] && [ -n "$head_oid" ] ||
-  { echo "incomplete base/head metadata for PR N: $pr_meta" >&2; exit 1; }
-
-git -C "$checkout" fetch origin "$base_ref" ||
-  { echo "fetch of $base_ref failed" >&2; exit 1; }
-git -C "$checkout" cat-file -e "${base_oid}^{commit}" ||
-  { echo "base $base_oid is not present after fetching $base_ref" >&2; exit 1; }
-test "$(git -C "$checkout" rev-parse HEAD)" = "$head_oid" ||
-  { echo "checkout HEAD is not the head $head_oid pushed in step 2" >&2; exit 1; }
+set -e
+meta="$(gh pr view N --json baseRefName,baseRefOid,headRefOid \
+  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')"
+read -r base_ref base_oid head_oid <<<"$meta"
+git -C "$checkout" fetch origin "$base_ref"
+git -C "$checkout" cat-file -e "${base_oid}^{commit}"
+test "$(git -C "$checkout" rev-parse HEAD)" = "$head_oid"
 ```
 
-`HEAD` must equal the `headRefOid` you pushed in step 2. On a mismatch, stop the
-rally and report it — do not review, and do not force the branch back. A `base_oid`
-that differs from last rally's is not itself a failure: the base advanced, so
-record the new one and note in the log which base each rally was reviewed
-against. The base failure that stops the rally is the `cat-file` one, and it
-means what Preflight says it means.
+Record both OIDs and substitute them into every reviewer's
+`git diff BASE_OID...HEAD_OID` prompt. Stop if any command fails.
 
 Run reviewers **concurrently in the background** — they are independent, and
 serializing them doubles every rally's wall clock. Reviewers are read-only: they
@@ -323,35 +273,11 @@ gh pr checks N          # all required checks passing
 gh pr view N --json mergeable,mergeStateStatus,isDraft,reviewDecision
 ```
 
-- the run finished on **Pass**, not budget or no-progress
-- required checks are green
-- `mergeable` is `MERGEABLE`, no conflicts
-- the PR is not a draft — mark it ready first if it was opened as one
-- `mergeStateStatus` is `CLEAN`, or `HAS_HOOKS` on a repo with merge hooks
-- `reviewDecision` is not `CHANGES_REQUESTED` — **never** merge over a
-  requested change, whoever requested it and however stale it looks
-- `reviewDecision` is `APPROVED` whenever review is required. An empty
-  `reviewDecision` means the repo requires no review and this condition does not
-  apply; `REVIEW_REQUIRED` means it does and is unmet
-
-`mergeStateStatus` is the one field that reflects branch protection as GitHub
-evaluates it, so check it rather than inferring from the others: `BLOCKED` covers
-a required review that is missing and a required check that has not reported,
-`BEHIND` means the base moved past the branch, `UNSTABLE` means a non-required
-check failed, `DIRTY` means conflicts. Treat `UNKNOWN` as not-yet-computed — wait
-and re-read it once, then stop if it does not resolve.
-
-Reviews here are the rally's own reviewers, which is not the same thing as
-GitHub's review requirement. When the PR is authored by `$gh_user`, the rally
-publishes comments rather than approvals, so a repo that requires review will sit
-at `REVIEW_REQUIRED` no matter how clean the rally finished. That is a stop, not
-a formality to work around: report that the PR needs a human approval and leave
-it.
-
-Use the repository's configured merge method. If any condition fails, do not
-merge: report which one blocked it and leave the PR for the user. A passing rally
-is not authorization to merge a red build, and never bypasses branch protection —
-no admin merge, no `--admin`, no disabling a required check.
+Merge only after a **Pass**, green required checks, `mergeable=MERGEABLE`, a
+non-draft PR, `mergeStateStatus` of `CLEAN` or `HAS_HOOKS`, and
+`reviewDecision` that is empty or `APPROVED`. Never merge
+`CHANGES_REQUESTED` or `REVIEW_REQUIRED`, and never use `--admin`. If any
+condition fails, report it and leave the PR unmerged.
 
 ## Report
 
