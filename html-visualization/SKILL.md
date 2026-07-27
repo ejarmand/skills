@@ -61,13 +61,17 @@ Then **view `SHOT_DIR/viz.png`** for evaluation.
   confirm the process is still your server before signalling it.
 
   ```bash
-  read -r pid port <"SHOT_DIR/server.pid" 2>/dev/null || exit 0   # nothing left behind
-  case "$(ps -p "$pid" -o args= 2>/dev/null)" in
-    *"http.server $port"*) kill "$pid" ;;
-    "") : ;;                                                      # already exited
-    *) echo "pid $pid is not the viz server — leaving it alone" >&2 ;;
-  esac
-  rm -f "SHOT_DIR/server.pid"
+  # No pid file is the normal case; the branch is optional so cleanup below
+  # still runs either way.
+  if read -r pid port <"SHOT_DIR/server.pid" 2>/dev/null; then
+    case "$(ps -p "$pid" -o args= 2>/dev/null)" in
+      *"http.server $port"*) kill "$pid" ;;
+      "") : ;;                                                    # already exited
+      *) echo "pid $pid is not the viz server — leaving it alone" >&2 ;;
+    esac
+    rm -f "SHOT_DIR/server.pid"
+  fi
+  rm -rf "SHOT_DIR"
   ```
 
 - The port is chosen by binding port 0 and releasing it, so another process can
@@ -90,4 +94,4 @@ Fix the biggest problem, re-screenshot the same viewport, compare. **Stop when t
 
 - If composition is hard to explore in code (a tricky metaphor or dense layout), generate a reference image first, then translate it to HTML.
 - Keep the HTML in the requested project location; screenshots are evaluation artifacts and belong in the screenshot directory.
-- When done, `playwright-cli -s=html-viz close` and `rm -rf "SHOT_DIR"`. The trap already stopped the server; if a render pass was interrupted before its trap ran, run the `server.pid` recovery above first — `rm -rf` on the screenshot directory would otherwise discard the only record of the orphaned PID. Report where the file lives, what you visually verified, and any known limitations.
+- When done, `playwright-cli -s=html-viz close`, then run the `server.pid` recovery block above — after its optional PID branch, it always removes the screenshot directory. Report where the file lives, what you visually verified, and any known limitations.
