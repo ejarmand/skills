@@ -80,13 +80,6 @@ git -C "$repo_root" worktree add -b "$branch" "$worktree_path" \
 checkout="$worktree_path"
 ```
 
-First inspect `git worktree list --porcelain` and local and remote branch refs.
-On an interrupted run, reuse an existing worktree only when its registered branch
-and path match; if the branch exists without its worktree, attach it with
-`git worktree add "$worktree_path" "$branch"`. If the path or branch belongs to
-something else, stop — do not delete, reset, or overwrite. Leave the worktree in
-place afterward so the run can be resumed.
-
 Claude and Cursor commands below take no working-directory option, so run them
 from `checkout`; pass `checkout` to Codex via `-C`.
 
