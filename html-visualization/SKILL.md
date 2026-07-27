@@ -18,15 +18,46 @@ Build the visualization in code, render it in a real browser, and judge it from 
 
 Prefer a standalone HTML file. Serve it over HTTP — `file://` URLs are blocked by the browser daemon.
 
+Create the screenshot directory once, outside the project, and print it:
+
 ```bash
-cd /abs/dir/containing/viz && python3 -m http.server 8731 >/dev/null 2>&1 &
-playwright-cli -s=html-viz open --browser=chromium http://localhost:8731/viz.html
-playwright-cli -s=html-viz resize 1440 900   # default viewport unless the user specifies one
-playwright-cli -s=html-viz screenshot --filename=$SCRATCH/viz.png
+mktemp -d -t html-viz-XXXXXX
 ```
 
-Then **view `$SCRATCH/viz.png`** for evaluation, where `$SCRATCH` is a scratch directory outside the project.
+Each Bash call is a fresh shell, so variables do not carry over — substitute the
+printed path literally wherever `SHOT_DIR` appears below, and quote it.
 
+Then render. Bind to a free port rather than a fixed one, and fail fast if the
+server did not come up or the port is serving something else:
+
+```bash
+viz_dir=/abs/dir/containing/viz
+port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+python3 -m http.server "$port" --bind 127.0.0.1 --directory "$viz_dir" >/dev/null 2>&1 &
+server_pid=$!
+trap 'kill "$server_pid" 2>/dev/null' EXIT
+url="http://127.0.0.1:$port/viz.html"
+
+curl --retry 5 --retry-connrefused -fsS "$url" -o /dev/null ||
+  { echo "no server serving $url" >&2; exit 1; }
+kill -0 "$server_pid" 2>/dev/null ||
+  { echo "http.server (pid $server_pid) exited" >&2; exit 1; }
+
+playwright-cli -s=html-viz open --browser=chromium "$url"
+playwright-cli -s=html-viz resize 1440 900   # default viewport unless the user specifies one
+playwright-cli -s=html-viz screenshot --filename="SHOT_DIR/viz.png"
+```
+
+Then **view `SHOT_DIR/viz.png`** for evaluation.
+
+- Run the block above as a single command: the `EXIT` trap stops the server when
+  the shell ends, so the server lives exactly as long as the render pass that
+  needs it. Re-run the whole block for each iteration; the browser session and
+  the screenshot directory persist across passes.
+- The port is chosen by binding port 0 and releasing it, so another process can
+  in principle claim it first. The `curl` check is what proves *your* server is
+  the one answering — treat its failure as a real error, not a race to retry
+  around.
 - Pass `--browser=chromium` on `open`. Without it the CLI targets the `chrome` channel, which is often not installed even though Playwright's bundled Chromium is; the daemon then dies with `Chromium distribution 'chrome' is not found`. `chromium` is a valid value despite being absent from `--help`.
 - Use the named session (`-s=html-viz`) on every command so a concurrent browser session can't interfere.
 - `playwright-cli console` after load and after interactions to catch runtime/render errors. A 404 for `/favicon.ico` is expected noise from the local server.
@@ -42,5 +73,5 @@ Fix the biggest problem, re-screenshot the same viewport, compare. **Stop when t
 ## Notes
 
 - If composition is hard to explore in code (a tricky metaphor or dense layout), generate a reference image first, then translate it to HTML.
-- Keep the HTML in the requested project location; screenshots are evaluation artifacts and belong in the scratch directory.
-- When done, `playwright-cli -s=html-viz close`, stop the HTTP server you started, and report where the file lives, what you visually verified, and any known limitations.
+- Keep the HTML in the requested project location; screenshots are evaluation artifacts and belong in the screenshot directory.
+- When done, `playwright-cli -s=html-viz close` and `rm -rf "SHOT_DIR"`. The trap already stopped the server; if a render pass was interrupted before its trap ran, kill that recorded PID. Report where the file lives, what you visually verified, and any known limitations.

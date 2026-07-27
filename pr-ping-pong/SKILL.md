@@ -42,6 +42,7 @@ gh auth status
 gh repo view --json nameWithOwner,defaultBranchRef
 gh_user="$(gh api user --jq .login)"
 
+claude auth status                  # if Claude implements or reviews — the default implementer
 codex login status                  # if Codex implements or reviews
 cursor-agent status --format json   # if Cursor reviews
 ```
@@ -89,15 +90,36 @@ place afterward so the run can be resumed.
 Claude and Cursor commands below take no working-directory option, so run them
 from `checkout`; pass `checkout` to Codex via `-C`.
 
+Once a PR exists — immediately for a PR target, after rally 1 opens the draft for
+an issue target — resolve and record the base it will merge into. A review of
+"the diff against the base" is only meaningful against a *named* base commit;
+without one, a base branch that advances mid-run silently changes what every
+reviewer sees.
+
+```bash
+read -r base_ref base_oid head_oid <<<"$(gh pr view N \
+  --json baseRefName,baseRefOid,headRefOid \
+  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')"
+
+git -C "$checkout" fetch origin "$base_ref"
+git -C "$checkout" cat-file -e "${base_oid}^{commit}" ||
+  { echo "base $base_oid missing after fetching $base_ref — base moved or was force-pushed" >&2; exit 1; }
+```
+
+Record `base_ref`, `base_oid`, and `head_oid` in the rally log. If the base OID
+is absent after the fetch, the base moved: re-resolve it, log the change, and say
+so in the report — findings from earlier rallies were measured against a
+different base.
+
 Record the PR author. Agents push under the user's credentials, so the PR is
 normally authored by `$gh_user`, and **GitHub rejects approve and
 request-changes on your own PR** — then publish every review as a comment. Use
 review events only when the author differs from `$gh_user`.
 
 Keep a rally log at `${TMPDIR:-/tmp}/pr-ping-pong/<owner>-<repo>-<pr>.md`:
-resolved parameters, session IDs, and per rally the head SHA, each verdict, each
-finding, and its triage outcome. It makes an interrupted run resumable and is
-what you summarize at the end.
+resolved parameters, session IDs, and per rally the base and head SHAs, each
+verdict, each finding, and its triage outcome. It makes an interrupted run
+resumable and is what you summarize at the end.
 
 ## The verdict contract
 
@@ -172,19 +194,39 @@ unpushed or unverified state wastes a full rally.
 
 ### 3. Review
 
+Re-resolve base and head **before every review rally**, and confirm the checkout
+matches. The base branch can advance and the head can be pushed to from
+elsewhere between rallies; reviewing a tree that is not the one you just pushed
+produces findings against code nobody will merge.
+
+```bash
+read -r base_ref base_oid head_oid <<<"$(gh pr view N \
+  --json baseRefName,baseRefOid,headRefOid \
+  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')"
+git -C "$checkout" fetch origin "$base_ref"
+git -C "$checkout" cat-file -e "${base_oid}^{commit}"   # exact base present
+test "$(git -C "$checkout" rev-parse HEAD)" = "$head_oid"
+```
+
+`HEAD` must equal the `headRefOid` you pushed in step 2. On a mismatch, stop the
+rally and report it — do not review, and do not force the branch back. A changed
+`base_oid` is not fatal: record the new one and note in the log which base each
+rally was reviewed against.
+
 Run reviewers **concurrently in the background** — they are independent, and
 serializing them doubles every rally's wall clock. Reviewers are read-only: they
 analyze, *you* publish. That keeps one publishing path across three CLIs and
 means no reviewer needs write or network authority.
 
-Every reviewer gets the same prompt:
+Every reviewer gets the same prompt, with the resolved SHAs substituted so all
+reviewers judge the same diff:
 
 ```
-Review the diff of PR #N against its base in this checkout. Report only concrete
-defects introduced by this change — correctness, security, data loss, broken
-contracts, missing tests for changed behavior. For each: severity, file:line, the
-failure it causes, and a fix. Make no changes and no GitHub calls. End with the
-verdict line.
+Review the diff of PR #N in this checkout: `git diff BASE_OID...HEAD_OID`. Report
+only concrete defects introduced by this change — correctness, security, data
+loss, broken contracts, missing tests for changed behavior. For each: severity,
+file:line, the failure it causes, and a fix. Make no changes and no GitHub calls.
+End with the verdict line.
 ```
 
 ```bash
@@ -259,15 +301,36 @@ gh pr view N --json mergeable,mergeStateStatus,isDraft,reviewDecision
 - required checks are green
 - `mergeable` is `MERGEABLE`, no conflicts
 - the PR is not a draft — mark it ready first if it was opened as one
+- `mergeStateStatus` is `CLEAN`, or `HAS_HOOKS` on a repo with merge hooks
+- `reviewDecision` is not `CHANGES_REQUESTED` — **never** merge over a
+  requested change, whoever requested it and however stale it looks
+- `reviewDecision` is `APPROVED` whenever review is required. An empty
+  `reviewDecision` means the repo requires no review and this condition does not
+  apply; `REVIEW_REQUIRED` means it does and is unmet
+
+`mergeStateStatus` is the one field that reflects branch protection as GitHub
+evaluates it, so check it rather than inferring from the others: `BLOCKED` covers
+a required review that is missing and a required check that has not reported,
+`BEHIND` means the base moved past the branch, `UNSTABLE` means a non-required
+check failed, `DIRTY` means conflicts. Treat `UNKNOWN` as not-yet-computed — wait
+and re-read it once, then stop if it does not resolve.
+
+Reviews here are the rally's own reviewers, which is not the same thing as
+GitHub's review requirement. When the PR is authored by `$gh_user`, the rally
+publishes comments rather than approvals, so a repo that requires review will sit
+at `REVIEW_REQUIRED` no matter how clean the rally finished. That is a stop, not
+a formality to work around: report that the PR needs a human approval and leave
+it.
 
 Use the repository's configured merge method. If any condition fails, do not
 merge: report which one blocked it and leave the PR for the user. A passing rally
-is not authorization to merge a red build.
+is not authorization to merge a red build, and never bypasses branch protection —
+no admin merge, no `--admin`, no disabling a required check.
 
 ## Report
 
-Close with a rally table — per rally, the head SHA, each reviewer's verdict,
-findings accepted and rejected — then the final state, surviving non-blocking
+Close with a rally table — per rally, the base and head SHAs, each reviewer's
+verdict, findings accepted and rejected — then the final state, surviving non-blocking
 findings, the merge outcome or why it was skipped, the PR URL, and the rally log
 path. Keep every session ID in the log so the user can resume any participant.
 For a new PR, also report the worktree path.
