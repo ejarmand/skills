@@ -41,6 +41,8 @@ cursor-agent -p --output-format stream-json --auto-review --trust \
   "Inspect the repository and implement TASK. Verify the result."
 ```
 
+Every `-p` run requires `--trust`, including `--mode plan` and `--mode ask`. Without it the run aborts immediately with `Workspace Trust Required` and does nothing, because there is no interactive prompt to answer. Confirm that the current or specified workspace is the intended one, then pass the flag; the judgment call is which workspace, not whether to include it.
+
 `--auto-review` auto-runs tool calls its classifier deems safe and prompts for the rest. In non-interactive `-p` mode there is no one to answer that prompt, so a run that needs approval can stall. For genuinely unattended work that must run any command, add `--force` (see below) rather than relying on `--auto-review` alone.
 
 Use the least authority suitable for the task:
@@ -49,7 +51,6 @@ Use the least authority suitable for the task:
 - Add `--mode ask` for read-only questions.
 - Prefer `--auto-review` for ordinary agent work.
 - Add `--force` only when the user authorized changes and unattended command execution is necessary.
-- Add `--trust` only after confirming that the current or specified workspace is the intended one.
 - Use `--sandbox enabled` when the task can run within Cursor's sandbox.
 
 State constraints directly in the prompt: permitted edits, required checks, expected output, and forbidden side effects. For review-only work, explicitly prohibit edits, pushes, merges, and unrelated external actions.

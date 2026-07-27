@@ -16,20 +16,22 @@ Build the visualization in code, render it in a real browser, and judge it from 
 
 ## Build and render
 
-Prefer a standalone HTML file.
+Prefer a standalone HTML file. Serve it over HTTP — `file://` URLs are blocked by the browser daemon.
 
 ```bash
-playwright-cli open file:///abs/path/to/viz.html
-playwright-cli resize 1440 900   # default viewport unless the user specifies one
-playwright-cli screenshot --filename=/tmp/viz.png
+cd /abs/dir/containing/viz && python3 -m http.server 8731 >/dev/null 2>&1 &
+playwright-cli -s=html-viz open --browser=chromium http://localhost:8731/viz.html
+playwright-cli -s=html-viz resize 1440 900   # default viewport unless the user specifies one
+playwright-cli -s=html-viz screenshot --filename=$SCRATCH/viz.png
 ```
 
-Then **view `/tmp/viz.png`** for evaluation.
+Then **view `$SCRATCH/viz.png`** for evaluation, where `$SCRATCH` is a scratch directory outside the project.
 
-- `playwright-cli console` after load and after interactions to catch runtime/render errors.
+- Pass `--browser=chromium` on `open`. Without it the CLI targets the `chrome` channel, which is often not installed even though Playwright's bundled Chromium is; the daemon then dies with `Chromium distribution 'chrome' is not found`. `chromium` is a valid value despite being absent from `--help`.
+- Use the named session (`-s=html-viz`) on every command so a concurrent browser session can't interfere.
+- `playwright-cli console` after load and after interactions to catch runtime/render errors. A 404 for `/favicon.ico` is expected noise from the local server.
 - `playwright-cli snapshot` to inspect DOM structure when diagnosing a layout problem.
-- Use a named session (`playwright-cli -s=html-viz ...` on every command) if another browser session may be active.
-- If the browser is missing, run `playwright-cli install-browser` and retry.
+- If `open` fails, check the daemon error before reinstalling anything. `playwright-cli install-browser --list` shows what is already present; a bare `install-browser` can abort on host-library validation (`libgtk-4`, gstreamer, …) that needs root, which is a separate problem from browser selection.
 
 ## Critique and iterate
 
@@ -40,5 +42,5 @@ Fix the biggest problem, re-screenshot the same viewport, compare. **Stop when t
 ## Notes
 
 - If composition is hard to explore in code (a tricky metaphor or dense layout), generate a reference image first, then translate it to HTML.
-- Keep the HTML in the requested project location; `/tmp` screenshots are evaluation artifacts.
-- When done, `playwright-cli close` and report where the file lives, what you visually verified, and any known limitations.
+- Keep the HTML in the requested project location; screenshots are evaluation artifacts and belong in the scratch directory.
+- When done, `playwright-cli -s=html-viz close`, stop the HTTP server you started, and report where the file lives, what you visually verified, and any known limitations.
