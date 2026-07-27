@@ -7,39 +7,33 @@ disable-model-invocation: true
 # PR Ping Pong
 
 Alternate an implementation agent against reviewers from *other* providers until
-the change is review-clean or the rally budget runs out. Coding agents catch
-defects in code they did not write far more reliably than in their own, so the
-entire value of this skill comes from one invariant:
+the change is review-clean or the rally budget runs out.
 
 **A reviewer must never share a session with the agent that wrote the code under
-review.** When the same provider both implements and reviews, the reviewer runs
-in a separate session that has never seen the implementation transcript.
+review.** Agents catch defects in code they did not write far more reliably than
+in their own. When the same provider implements and reviews, the reviewer runs in
+a separate session that never saw the implementation transcript.
 
-Treat explicit invocation as authorization to run the agent CLIs, commit, and
-push to the PR branch for this task. It does not authorize merging, force
-pushes, edits outside the change, or unrelated external actions.
+Invocation authorizes running the agent CLIs, committing, and pushing to the PR
+branch. It does not authorize merging, force pushes, edits outside the change, or
+unrelated external actions.
 
 ## Parameters
 
-Resolve these from the user's request, then state the resolved set before
-starting.
+Resolve from the request, then state the resolved set before starting.
 
 | Parameter | Default |
 |---|---|
 | target | required — issue or PR number, or URL |
 | implementer | `claude` |
-| reviewers | derived from implementer (below) |
+| reviewers | `claude` → `codex`, `cursor-grok`; `codex` → `cursor-grok`, `codex` (fresh session) |
 | max rallies | `3` |
 | merge on pass | `false` |
+| new PR worktree | `REPO_ROOT/worktrees/[branch]` |
 
-Default reviewer sets:
-
-- implementer `claude` → reviewers `codex`, `cursor-grok`
-- implementer `codex` → reviewers `cursor-grok`, `codex` (fresh session)
-
-Other implementers are out of scope; if asked for one, say so and offer the
-supported pair. Honor explicit overrides, but refuse a reviewer set that would
-review its own implementation session and explain why.
+Other implementers are out of scope — say so and offer the supported pair. Honor
+explicit overrides, but refuse a reviewer set that would review its own
+implementation session, and explain why.
 
 ## Preflight
 
@@ -48,39 +42,67 @@ gh auth status
 gh repo view --json nameWithOwner,defaultBranchRef
 gh_user="$(gh api user --jq .login)"
 
-codex login status          # if Codex is implementing or reviewing
-cursor-agent status --format json   # if Cursor is reviewing
+codex login status                  # if Codex implements or reviews
+cursor-agent status --format json   # if Cursor reviews
 ```
 
-If any CLI is unauthenticated, stop and ask the user to run `codex login`,
-`cursor-agent login`, or `gh auth login`. Never print or embed a token. These
-CLIs evolve, so treat installed `--help` as authoritative over the commands
-below. The sibling `codex-agent` and `cursor-agent` skills, when present, carry
-deeper guidance on sessions and sandboxes, but this skill does not require them.
+If a CLI is unauthenticated, stop and ask the user to log in. Never print or
+embed a token. These CLIs evolve — treat installed `--help` as authoritative over
+the commands below.
 
-Resolve the target to a PR on a branch:
+Resolve the target to a PR on a branch and set `checkout` — the directory every
+agent and repository check uses. Run all Git, diff, test, commit, and push steps
+from `checkout`; use the repository root only to create or inspect worktrees.
 
-- **PR given** — check out its branch, confirm it is not already merged or
-  closed, and record its head SHA.
+- **PR given** — check out its branch, confirm it is not merged or closed, record
+  its head SHA; that checkout is `checkout`.
 - **Issue given** — branch from the default branch as `ppp/issue-<n>-<slug>`,
-  run rally 1's implementation, push, then open a *draft* PR that closes the
-  issue. Keep it draft for the duration; mark ready only at a passing finish.
+  create a linked worktree at `REPO_ROOT/worktrees/[branch]` (e.g.
+  `worktrees/ppp/issue-42-fix-cache`), use it as `checkout`. Run rally 1 there,
+  push, then open a *draft* PR that closes the issue. Mark ready only at a
+  passing finish.
 
-Record the PR author. Because agents push under the user's own credentials, the
-PR is normally authored by `$gh_user`, and **GitHub rejects approve and
-request-changes on your own PR**. In that case publish every review as a
-comment. Use real review events only when the author differs from `$gh_user`.
+For a new PR, leave the primary checkout on its current branch and exclude
+`/worktrees/` via Git info exclude — no tracked `.gitignore` change unless asked.
 
-Open a rally log at `${TMPDIR:-/tmp}/pr-ping-pong/<owner>-<repo>-<pr>.md` and
-keep it current: resolved parameters, session IDs, and per rally the head SHA,
-each verdict, each finding, and its triage outcome. It is the record that makes
-an interrupted run resumable, and it is what you summarize at the end.
+```bash
+repo_root="$(git rev-parse --show-toplevel)"
+branch="ppp/issue-N-slug"
+worktree_path="$repo_root/worktrees/$branch"
+exclude_file="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path info/exclude)"
+grep -qxF /worktrees/ "$exclude_file" ||
+  printf '\n/worktrees/\n' >>"$exclude_file"
+mkdir -p "$(dirname "$worktree_path")"
+git -C "$repo_root" fetch origin "$default_branch"
+git -C "$repo_root" worktree add -b "$branch" "$worktree_path" \
+  "origin/$default_branch"
+checkout="$worktree_path"
+```
+
+First inspect `git worktree list --porcelain` and local and remote branch refs.
+On an interrupted run, reuse an existing worktree only when its registered branch
+and path match; if the branch exists without its worktree, attach it with
+`git worktree add "$worktree_path" "$branch"`. If the path or branch belongs to
+something else, stop — do not delete, reset, or overwrite. Leave the worktree in
+place afterward so the run can be resumed.
+
+Claude and Cursor commands below take no working-directory option, so run them
+from `checkout`; pass `checkout` to Codex via `-C`.
+
+Record the PR author. Agents push under the user's credentials, so the PR is
+normally authored by `$gh_user`, and **GitHub rejects approve and
+request-changes on your own PR** — then publish every review as a comment. Use
+review events only when the author differs from `$gh_user`.
+
+Keep a rally log at `${TMPDIR:-/tmp}/pr-ping-pong/<owner>-<repo>-<pr>.md`:
+resolved parameters, session IDs, and per rally the head SHA, each verdict, each
+finding, and its triage outcome. It makes an interrupted run resumable and is
+what you summarize at the end.
 
 ## The verdict contract
 
-Three CLIs with three output formats need one machine-readable signal, so every
-reviewer prompt must require this and nothing fancier — the last line of the
-response is exactly one of:
+Three CLIs, three output formats, one machine-readable signal. Every reviewer
+prompt must require that its last line is exactly one of:
 
 ```
 VERDICT: CLEAN
@@ -89,8 +111,8 @@ VERDICT: BLOCKING
 ```
 
 Above it, findings as a numbered list, each with severity, `file:line`, the
-concrete failure it causes, and a suggested fix. Demand a failure scenario;
-findings without one are style opinions and triage as such.
+concrete failure it causes, and a suggested fix. Findings without a failure
+scenario are style opinions and triage as such.
 
 If a reviewer returns no parseable verdict, re-ask that reviewer once for the
 verdict line alone. A second failure is a reviewer error — log it, exclude that
@@ -104,10 +126,9 @@ budgeted number.
 ### 1. Implement
 
 Preallocate the implementer's session so it survives an interrupted turn, and
-resume that same session on every later rally — the implementer *should* carry
-its context forward.
+resume it every later rally — the implementer *should* carry context forward.
 
-Claude implementer, first rally:
+Claude implementer, rally 1:
 
 ```bash
 impl_session="$(uuidgen)"
@@ -116,28 +137,28 @@ claude -p --session-id "$impl_session" --permission-mode acceptEdits \
   "Implement the change for PR #N in this checkout. Scope: SCOPE. Commit your work with a clear message. Do not push, merge, or edit files outside the scope. Report changed files and the checks you ran."
 ```
 
-Later rallies resume it with `claude -p --resume "$impl_session"`.
+Later rallies: `claude -p --resume "$impl_session"`.
 
-Codex implementer, first rally:
+Codex implementer, rally 1:
 
 ```bash
-codex exec --json --sandbox workspace-write -C /absolute/path/to/repo \
+codex exec --json --sandbox workspace-write -C "$checkout" \
   "Implement the change for PR #N in this checkout. Scope: SCOPE. Commit your work with a clear message. Do not push, merge, edit outside the scope, or spawn more agents. Report changed files and the checks you ran."
 ```
 
 Capture `impl_session` from the first event, `{"type":"thread.started",
-"thread_id":"..."}`, the moment it appears. Resume on later rallies — global
-options go **before** `resume`, and omitting `--json` loses the event stream:
+"thread_id":"..."}`. Resume on later rallies — global options go **before**
+`resume`, and omitting `--json` loses the event stream:
 
 ```bash
-codex exec --json --sandbox workspace-write -C /absolute/path/to/repo \
+codex exec --json --sandbox workspace-write -C "$checkout" \
   resume "$impl_session" "Address the triaged findings below. FINDINGS"
 ```
 
-Require a successful exit and a terminal `turn.completed`; treat `turn.failed`,
-`error`, a nonzero exit, or a mismatched thread ID as a failed rally. Never
+Require a successful exit and a terminal `turn.completed`; `turn.failed`,
+`error`, a nonzero exit, or a mismatched thread ID is a failed rally. Never
 resume one session concurrently, and never add
-`--dangerously-bypass-approvals-and-sandbox` to make a run unattended.
+`--dangerously-bypass-approvals-and-sandbox`.
 
 Give the implementer the objective, the permitted scope, the required
 verification, and — from rally 2 on — the triaged findings. Never let it push,
@@ -145,64 +166,63 @@ merge, or spawn further agents.
 
 ### 2. Push
 
-Verify the implementer's work yourself before it reaches a reviewer: inspect the
-diff, confirm the commits are scoped, and run the repo's checks. Then push the
-branch and record the new head SHA. Reviewing an unpushed or unverified state
-wastes a full rally.
+Verify the work yourself first: inspect the diff, confirm the commits are scoped,
+run the repo's checks. Then push and record the new head SHA. Reviewing an
+unpushed or unverified state wastes a full rally.
 
 ### 3. Review
 
 Run reviewers **concurrently in the background** — they are independent, and
-serializing them doubles the wall clock of every rally.
+serializing them doubles every rally's wall clock. Reviewers are read-only: they
+analyze, *you* publish. That keeps one publishing path across three CLIs and
+means no reviewer needs write or network authority.
 
-Reviewers are read-only. They analyze; *you* publish. That keeps one publishing
-path across three CLIs and means no reviewer needs write or network authority.
+Every reviewer gets the same prompt:
 
-Cursor Grok reviewer:
+```
+Review the diff of PR #N against its base in this checkout. Report only concrete
+defects introduced by this change — correctness, security, data loss, broken
+contracts, missing tests for changed behavior. For each: severity, file:line, the
+failure it causes, and a fix. Make no changes and no GitHub calls. End with the
+verdict line.
+```
 
 ```bash
+# Cursor Grok
 cursor-agent -p --output-format json --mode plan --trust \
-  --model cursor-grok-4.5-high \
-  --resume="$cursor_review_session" \
-  "Review the diff of PR #N against its base in this checkout. Report only concrete defects introduced by this change — correctness, security, data loss, broken contracts, missing tests for changed behavior. For each: severity, file:line, the failure it causes, and a fix. Make no edits and no GitHub calls. End with the verdict line."
+  --model cursor-grok-4.5-high --resume="$cursor_review_session" "PROMPT"
+
+# Codex — a different thread_id than the Codex implementer, always.
+# Drop `resume ...` on rally 1 and record the reported thread_id.
+codex exec --json --sandbox read-only -C "$checkout" \
+  resume "$codex_review_session" "PROMPT"
+
+# Claude — only if the user overrides the defaults, since Claude normally implements.
+claude -p --permission-mode plan "PROMPT"
 ```
-
-Codex reviewer — a **different** `thread_id` than the Codex implementer, always:
-
-```bash
-codex exec --json --sandbox read-only -C /absolute/path/to/repo \
-  resume "$codex_review_session" \
-  "Review the diff of PR #N against its base in this checkout. Report only concrete defects introduced by this change — correctness, security, data loss, broken contracts, missing tests for changed behavior. For each: severity, file:line, the failure it causes, and a fix. Make no changes. End with the verdict line."
-```
-
-Drop `resume "$codex_review_session"` on rally 1 and record the `thread_id` the
-run reports.
-
-Claude reviewer (only if the user overrides the defaults, since the implementer
-is normally Claude): `claude -p --permission-mode plan`.
 
 Allocate each reviewer a session on rally 1 (`cursor-agent create-chat`,
 `uuidgen` for Claude, the captured `thread_id` for Codex) and **resume the same
-reviewer session across rallies**. A reviewer never wrote the code, so
-continuity costs nothing and buys the two things a fresh session cannot do:
-confirm its earlier findings were actually fixed, and notice when they were not.
+reviewer session across rallies**. A reviewer never wrote the code, so continuity
+costs nothing and buys what a fresh session cannot: confirming earlier findings
+were fixed, and noticing when they were not.
 
 ### 4. Publish
 
-Post each review to the PR verbatim, one comment per reviewer per rally, headed
-with the reviewer's model and the rally number so the timeline stays readable:
+Post each review verbatim, one comment per reviewer per rally, headed with the
+reviewer's model and the rally number:
 
 ```bash
 gh pr comment N --body-file <path>
 ```
 
 When the PR author is not `$gh_user`, use `gh pr review N --comment`,
-`--request-changes`, or `--approve` to match the verdict instead.
+`--request-changes`, or `--approve` to match the verdict.
 
 ### 5. Triage
 
 Reviewers are wrong sometimes, and an implementer that obeys every finding will
-churn or regress. Adjudicate each blocking finding yourself against the code:
+churn or regress. Adjudicate each blocking finding against the code:
 
 - **Accept** — real defect. Goes to the implementer as must-fix.
 - **Reject** — wrong, out of scope, or a style preference with no failure
@@ -215,20 +235,20 @@ reasoning rather than deferring to whichever spoke last.
 
 Stop and report at the first of these:
 
-1. **Pass** — every reviewer returned `CLEAN` or `NON_BLOCKING`, and no accepted
-   blocking finding is outstanding.
-2. **Budget** — the rally cap is reached. Report the surviving findings.
-3. **No progress** — a reviewer repeats a blocking finding from the previous
-   rally and the diff since then does not touch the cited location. Two agents
-   talking past each other will not converge; stop and bring it to the user.
+1. **Pass** — every reviewer returned `CLEAN` or `NON_BLOCKING`, no accepted
+   blocking finding outstanding.
+2. **Budget** — rally cap reached. Report the surviving findings.
+3. **No progress** — a reviewer repeats a blocking finding and the diff since
+   then does not touch the cited location. Two agents talking past each other
+   will not converge; bring it to the user.
 4. **Failure** — an implementer errors, cannot proceed, or the branch stops
-   building. Report the state; do not burn remaining rallies on a broken tree.
+   building. Report the state; do not burn rallies on a broken tree.
 
 Non-blocking findings never justify another rally. Carry them into the summary.
 
 ## Merge
 
-Merge only when the user set merge-on-pass **and** every one of these holds:
+Merge only when the user set merge-on-pass **and** all of these hold:
 
 ```bash
 gh pr checks N          # all required checks passing
@@ -237,17 +257,17 @@ gh pr view N --json mergeable,mergeStateStatus,isDraft,reviewDecision
 
 - the run finished on **Pass**, not budget or no-progress
 - required checks are green
-- `mergeable` is `MERGEABLE`, with no conflicts
+- `mergeable` is `MERGEABLE`, no conflicts
 - the PR is not a draft — mark it ready first if it was opened as one
 
 Use the repository's configured merge method. If any condition fails, do not
-merge: report exactly which one blocked it and leave the PR for the user. A
-passing rally is not authorization to merge a red build.
+merge: report which one blocked it and leave the PR for the user. A passing rally
+is not authorization to merge a red build.
 
 ## Report
 
-Close with a compact rally table — per rally, the head SHA, each reviewer's
-verdict, findings accepted and rejected — then the final state, surviving
-non-blocking findings, the merge outcome or the reason it was skipped, the PR
-URL, and the rally log path. Keep every session ID in the log so the user can
-resume any participant directly.
+Close with a rally table — per rally, the head SHA, each reviewer's verdict,
+findings accepted and rejected — then the final state, surviving non-blocking
+findings, the merge outcome or why it was skipped, the PR URL, and the rally log
+path. Keep every session ID in the log so the user can resume any participant.
+For a new PR, also report the worktree path.
