@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Ping Pong"
+  short_description: "Rally a PR between an implementer and cross-provider reviewers"
+  default_prompt: "Use $pr-ping-pong to iterate this issue or pull request through implement/review rallies until it passes cross-provider review."
