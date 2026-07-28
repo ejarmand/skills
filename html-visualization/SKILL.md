@@ -5,7 +5,7 @@ description: Build, revise, and evaluate browser-rendered HTML visualizations fo
 
 # HTML Visualizations
 
-Build the visualization in code, render it in a real browser, and judge it from screenshots. Prefer pedagogical clarity over marketing polish, and only add a visualization when it improves on existing documentation.
+Build the visualization in code, render it in a real browser, and judge it from screenshots. Prefer pedagogical clarity over marketing polish.
 
 ## Plan
 
