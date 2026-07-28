@@ -42,6 +42,7 @@ gh auth status
 gh repo view --json nameWithOwner,defaultBranchRef
 gh_user="$(gh api user --jq .login)"
 
+claude auth status                  # if Claude implements or reviews — the default implementer
 codex login status                  # if Codex implements or reviews
 cursor-agent status --format json   # if Cursor reviews
 ```
@@ -79,13 +80,6 @@ git -C "$repo_root" worktree add -b "$branch" "$worktree_path" \
 checkout="$worktree_path"
 ```
 
-First inspect `git worktree list --porcelain` and local and remote branch refs.
-On an interrupted run, reuse an existing worktree only when its registered branch
-and path match; if the branch exists without its worktree, attach it with
-`git worktree add "$worktree_path" "$branch"`. If the path or branch belongs to
-something else, stop — do not delete, reset, or overwrite. Leave the worktree in
-place afterward so the run can be resumed.
-
 Claude and Cursor commands below take no working-directory option, so run them
 from `checkout`; pass `checkout` to Codex via `-C`.
 
@@ -95,9 +89,9 @@ request-changes on your own PR** — then publish every review as a comment. Use
 review events only when the author differs from `$gh_user`.
 
 Keep a rally log at `${TMPDIR:-/tmp}/pr-ping-pong/<owner>-<repo>-<pr>.md`:
-resolved parameters, session IDs, and per rally the head SHA, each verdict, each
-finding, and its triage outcome. It makes an interrupted run resumable and is
-what you summarize at the end.
+resolved parameters, session IDs, and per rally the base and head SHAs, each
+verdict, each finding, and its triage outcome. It makes an interrupted run
+resumable and is what you summarize at the end.
 
 ## The verdict contract
 
@@ -172,19 +166,36 @@ unpushed or unverified state wastes a full rally.
 
 ### 3. Review
 
+Immediately before each review rally, pin the exact base and head and confirm the
+checkout matches. Run this as one shell block:
+
+```bash
+set -e
+meta="$(gh pr view N --json baseRefName,baseRefOid,headRefOid \
+  --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')"
+read -r base_ref base_oid head_oid <<<"$meta"
+git -C "$checkout" fetch origin "$base_ref"
+git -C "$checkout" cat-file -e "${base_oid}^{commit}"
+test "$(git -C "$checkout" rev-parse HEAD)" = "$head_oid"
+```
+
+Record both OIDs and substitute them into every reviewer's
+`git diff BASE_OID...HEAD_OID` prompt. Stop if any command fails.
+
 Run reviewers **concurrently in the background** — they are independent, and
 serializing them doubles every rally's wall clock. Reviewers are read-only: they
 analyze, *you* publish. That keeps one publishing path across three CLIs and
 means no reviewer needs write or network authority.
 
-Every reviewer gets the same prompt:
+Every reviewer gets the same prompt, with the resolved SHAs substituted so all
+reviewers judge the same diff:
 
 ```
-Review the diff of PR #N against its base in this checkout. Report only concrete
-defects introduced by this change — correctness, security, data loss, broken
-contracts, missing tests for changed behavior. For each: severity, file:line, the
-failure it causes, and a fix. Make no changes and no GitHub calls. End with the
-verdict line.
+Review the diff of PR #N in this checkout: `git diff BASE_OID...HEAD_OID`. Report
+only concrete defects introduced by this change — correctness, security, data
+loss, broken contracts, missing tests for changed behavior. For each: severity,
+file:line, the failure it causes, and a fix. Make no changes and no GitHub calls.
+End with the verdict line.
 ```
 
 ```bash
@@ -255,19 +266,16 @@ gh pr checks N          # all required checks passing
 gh pr view N --json mergeable,mergeStateStatus,isDraft,reviewDecision
 ```
 
-- the run finished on **Pass**, not budget or no-progress
-- required checks are green
-- `mergeable` is `MERGEABLE`, no conflicts
-- the PR is not a draft — mark it ready first if it was opened as one
-
-Use the repository's configured merge method. If any condition fails, do not
-merge: report which one blocked it and leave the PR for the user. A passing rally
-is not authorization to merge a red build.
+Merge only after a **Pass**, green required checks, `mergeable=MERGEABLE`, a
+non-draft PR, `mergeStateStatus` of `CLEAN` or `HAS_HOOKS`, and
+`reviewDecision` that is empty or `APPROVED`. Never merge
+`CHANGES_REQUESTED` or `REVIEW_REQUIRED`, and never use `--admin`. If any
+condition fails, report it and leave the PR unmerged.
 
 ## Report
 
-Close with a rally table — per rally, the head SHA, each reviewer's verdict,
-findings accepted and rejected — then the final state, surviving non-blocking
+Close with a rally table — per rally, the base and head SHAs, each reviewer's
+verdict, findings accepted and rejected — then the final state, surviving non-blocking
 findings, the merge outcome or why it was skipped, the PR URL, and the rally log
 path. Keep every session ID in the log so the user can resume any participant.
 For a new PR, also report the worktree path.
