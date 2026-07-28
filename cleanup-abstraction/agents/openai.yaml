@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cleanup Abstraction"
+  short_description: "Trim needless helper layers"
+  default_prompt: "Use $cleanup-abstraction to simplify an over-abstracted flow without adding new layers."
