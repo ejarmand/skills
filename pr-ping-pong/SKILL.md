@@ -25,7 +25,7 @@ Resolve from the request, then state the resolved set before starting.
 | Parameter | Default |
 |---|---|
 | target | required — issue or PR number, or URL |
-| implementer | `claude` |
+| implementer | `native subagent` |
 | reviewers | `claude` → `codex`, `cursor-grok`; `codex` → `cursor-grok`, `codex` (fresh session) |
 | max rallies | `3` |
 | merge on pass | `false` |
