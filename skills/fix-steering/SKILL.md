@@ -29,7 +29,7 @@ python3 scripts/collect_steering_cases.py --model "<model-or-auto>" --since 30d 
    - Use `--keywords` to add project-specific steering terms, not to replace the built-in interruption patterns.
 
 3. Use subagents to clean candidate cases.
-   - Default to `gpt-5.3-codex-spark` with high reasoning when the subagent tool supports model selection; otherwise inherit the current model.
+   - Use the configured default model rather than hard-coding a model name; inherit the current model when the subagent tool does not support model selection.
    - Read and adapt `references/subagent-case-cleanup-prompt.md`.
    - Ask subagents to remove obvious false positives, keep raw evidence intact, and split large sets into review batches.
    - Do not ask cleanup agents to infer final failure categories.

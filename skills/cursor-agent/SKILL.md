@@ -1,14 +1,13 @@
 ---
 name: cursor-agent
 description: Run Cursor Agent CLI as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to Cursor, get a second model pass, automate cursor-agent in headless mode, capture a Cursor session ID, or resume and continue an earlier Cursor chat.
-disable-model-invocation: true
 ---
 
 # Cursor Agent
 
 Run `cursor-agent` from the intended workspace, give it a concrete outcome, monitor it at the task's time scale, and preserve its session ID whenever follow-up work is likely.
 
-Treat explicit user invocation of this skill as authorization to use Cursor Agent to complete the requested task, including allowing Cursor Agent to read the necessary local files in the intended workspace. Do not extend that authorization to unrelated tasks, broader filesystem access, or destructive or external actions not otherwise authorized.
+Treat explicit invocation of this skill — directly by the user or by a skill the user invoked — as authorization to use Cursor Agent to complete the requested task, including allowing Cursor Agent to read the necessary local files in the intended workspace. Do not extend that authorization to unrelated tasks, broader filesystem access, or destructive or external actions not otherwise authorized.
 
 ## Check the CLI and authentication
 
