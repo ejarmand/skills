@@ -24,11 +24,15 @@ playwright-cli open --help
 playwright-cli install-browser --help
 ```
 
-Choose a value accepted by the installed `open --help`. At the pinned review
-point those values were `chrome`, `firefox`, `webkit`, and `msedge`; `chromium`
-was not accepted. If `open` reports that the selected browser is missing,
-install the exact browser bundle named by the error (for example,
-`playwright-cli install-browser chrome-for-testing` for `chrome`) and retry.
+Start from a value listed by the installed `open --help` (at the pinned review
+point: `chrome`, `firefox`, `webkit`, and `msedge`), but treat the error
+message as the final authority — a listed value can still fail when its browser
+channel is not installed, and an unlisted alias can work (observed: `chromium`
+was absent from the help yet accepted, mapping to `chrome-for-testing`, while
+`chrome` failed wanting the system Chrome channel). If `open` reports a missing
+browser, install the exact bundle named by the error (for example,
+`playwright-cli install-browser chrome-for-testing`) and retry with the value
+that named it.
 
 Serve the HTML over HTTP because the browser daemon blocks `file://` URLs. Run
 this as one shell block so the variables and cleanup trap remain active, after
@@ -64,4 +68,4 @@ View the printed screenshot path. Re-run the block after changes, using the same
 
 Check accuracy, reading path, clipping or overlap, legibility, scrolling, contrast, and color-independent meaning. Fix the largest defect and re-screenshot. Stop when the visualization answers the target question with no meaningful defect.
 
-When done, close the browser session, remove the printed screenshot directory, and report the HTML location, what you verified, and any known limitations.
+When done, close the browser session and remove the printed screenshot directory. Then put the validated file in front of the user: open it with the platform opener when one exists (`xdg-open` on Linux, `open` on macOS, `start` on Windows), and otherwise deliver the file through the harness's file-sharing mechanism. Report the HTML location, what you verified, and any known limitations.

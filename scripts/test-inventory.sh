@@ -43,7 +43,7 @@ for skill_dir in "$REPO"/skills/*; do
   count=$((count + 1))
 done
 
-if rg -n 'ask-matt|cursor-code-review|pr-pping-pong' "$router" "$readme"; then
+if grep -En 'ask-matt|cursor-code-review|pr-pping-pong' "$router" "$readme"; then
   echo "error: stale skill name found in public inventory." >&2
   exit 1
 fi
