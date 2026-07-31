@@ -35,7 +35,7 @@ Look for the originating spec, in this order:
 
 Anything in the repo that documents how code should be written, such as `CODING_STANDARDS.md` or `CONTRIBUTING.md`.
 
-On top of whatever the repo documents, the Standards axis always carries the **smell baseline** in [SMELLS.md](SMELLS.md) — a fixed set of Fowler code smells, with the rules that bind them, that applies even when a repo documents nothing.
+On top of whatever the repo documents, the Standards axis always carries the **unified code standard** in [`../codebase-design/STANDARD.md`](../codebase-design/STANDARD.md) — the bar structure must clear to exist, the named smells, and the rules that bind them — which applies even when a repo documents nothing.
 
 ### 4. Spawn both sub-agents in parallel
 
@@ -44,8 +44,8 @@ Send a single message with two `Agent` tool calls. Use the `general-purpose` sub
 **Standards sub-agent prompt** — include:
 
 - The full diff command and commit list.
-- The list of standards-source files you found in step 3, **plus the full contents of SMELLS.md** pasted into the prompt — the sub-agent has no other access to it, and its binding rules travel with it.
-- The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Apply the baseline's binding rules. Under 400 words."
+- The list of standards-source files you found in step 3, **plus the full contents of `../codebase-design/STANDARD.md`** pasted into the prompt — the sub-agent has no other access to it, and its binding rules travel with it.
+- The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any violation of the pasted unified standard: name the rule or smell and quote the hunk. Apply the standard's binding rules. Under 400 words."
 
 **Spec sub-agent prompt** — include:
 

@@ -19,9 +19,9 @@ See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking g
 
 A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
 
-**Test only at pre-agreed seams.** Before writing any test, write down the seams under test and confirm them with the user. No test is written at an unconfirmed seam. You can't test everything — agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
+**Declare the seams under test.** Before writing any test, write down the seams under test. The choice is yours to reason about — prefer seams the spec already establishes, reuse existing seams before cutting new ones, take the highest seam that observes the behavior — and it is validated at review, not by asking the user: declare the tested seams in the PR description so reviewers can judge the choice. You can't test everything — choosing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
 
-Ask: "What's the public interface, and which seams should we test?"
+Ask yourself: "What's the public interface, and which seams matter?"
 
 ## Anti-patterns
 
@@ -34,6 +34,7 @@ Ask: "What's the public interface, and which seams should we test?"
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
 - **Refactoring is not part of the red → green loop.** After the requested
-  behavior is green, the enclosing `/implement` flow invokes
-  `/cleanup-abstraction` before `/code-review`. Cleanup changes the code; review
-  reports on the cleaned diff.
+  behavior is green, the enclosing `/implement` flow moves to `/code-review`,
+  whose Standards axis enforces the unified standard in
+  `../codebase-design/STANDARD.md`. Fix what review reports rather than
+  running a cleanup pass mid-loop.

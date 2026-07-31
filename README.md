@@ -16,9 +16,8 @@ maps the complete collection.
 - `prototype` — answer one design question with throwaway code
 - `to-spec` — turn a conversation into a buildable spec
 - `to-tickets` — split a spec into ordered tracer-bullet tickets
-- `implement` — run the TDD, cleanup, review, and verification sequence
+- `implement` — run the TDD, review, and verification sequence
 - `tdd` — build behavior in red → green slices
-- `cleanup-abstraction` — simplify an already-green implementation
 - `code-review` — review Standards and Spec as separate axes
 
 ### On-ramps and codebase health
