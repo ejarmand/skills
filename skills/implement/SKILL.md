@@ -1,6 +1,6 @@
 ---
 name: implement
-description: "Implement a prepared spec or set of tickets. Use when the user asks to implement one, or when an orchestrating skill such as pr-ping-pong runs the implementation subloop."
+description: "Implement a prepared spec or set of tickets. Use when the user asks to implement one, or when an orchestrating skill runs it as its implementation subloop."
 ---
 
 Implement the work described by the user in the spec or tickets.
