@@ -1,7 +1,6 @@
 ---
 name: cursor-agent
 description: Run Cursor Agent CLI as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to Cursor, get a second model pass, automate cursor-agent in headless mode, capture a Cursor session ID, or resume and continue an earlier Cursor chat.
-disable-model-invocation: true
 ---
 
 # Cursor Agent
