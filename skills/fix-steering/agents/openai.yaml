@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fix Steering"
+  short_description: "Analyze steering mistakes in Codex histories"
+  default_prompt: "Use $fix-steering to analyze recent Codex steering interruptions and suggest prevention changes."

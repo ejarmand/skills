@@ -1,4 +1,0 @@
-interface:
-  display_name: "Cursor Code Review"
-  short_description: "Review GitHub PRs with Cursor CLI"
-  default_prompt: "Use $cursor-code-review to review this GitHub pull request and publish the appropriate review or self-PR comment."
