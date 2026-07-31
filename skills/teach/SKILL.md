@@ -11,13 +11,13 @@ The user has asked you to teach them something. This is a stateful request - the
 
 Treat the current directory as a teaching workspace. The state of their learning is captured in this directory in several files:
 
-- `MISSION.md`: A document capturing the _reason_ the user is interested in the topic. This should be used to ground all teaching. Use the format in [MISSION-FORMAT.md](./MISSION-FORMAT.md).
-- `./reference/*.html`: A directory of reference materials. These are the compressed learnings from the lessons - cheat sheets, reference algorithms, syntax, yoga poses, glossaries. They are the raw units of learning. They should be beautiful documents which print out well, and are designed for quick reference.
-- `RESOURCES.md`: A list of resources which can be explored to ground your teaching in contextual knowledge, or to acquire knowledge and wisdom. Use the format in [RESOURCES-FORMAT.md](./RESOURCES-FORMAT.md).
-- `./learning-records/*.md`: A directory of learning records, which capture what the user has learned. These are loosely equivalent to architectural decision records in software development - they capture non-obvious lessons and key insights that may need to be revised later, or drive future sessions. These should be used to calculate the zone of proximal development. They are titled `0001-<dash-case-name>.md`, where the number increments each time. Use the format in [LEARNING-RECORD-FORMAT.md](./LEARNING-RECORD-FORMAT.md).
-- `./lessons/*.html`: A directory of lessons. A **lesson** is a single, self-contained HTML output that teaches one tightly-scoped thing tied to the mission. This is the primary unit of teaching in this workspace.
-- `./assets/*`: Reusable **components** shared across lessons. See [Assets](#assets).
-- `NOTES.md`: A scratchpad for you to jot down user preferences, or working notes.
+- `MISSION.md`: why the user is learning this — see [The Mission](#the-mission); format in [MISSION-FORMAT.md](./MISSION-FORMAT.md).
+- `RESOURCES.md`: the high-trust resources grounding the teaching — see [Knowledge](#knowledge); format in [RESOURCES-FORMAT.md](./RESOURCES-FORMAT.md).
+- `./lessons/*.html`: the primary unit of teaching — see [Lessons](#lessons).
+- `./reference/*.html`: compressed learnings kept for quick reference — see [Reference Documents](#reference-documents).
+- `./learning-records/*.md`: what the user has learned, driving the zone of proximal development — format in [LEARNING-RECORD-FORMAT.md](./LEARNING-RECORD-FORMAT.md).
+- `./assets/*`: reusable **components** shared across lessons — see [Assets](#assets).
+- `NOTES.md`: your scratchpad — see [`NOTES.md`](#notesmd).
 
 ## Philosophy
 
@@ -27,7 +27,7 @@ To learn at a deep level, the user needs three things:
 - **Skills**, acquired through highly-relevant interactive lessons devised by you, based on the knowledge
 - **Wisdom**, which comes from interacting with other learners and practitioners
 
-Before the `RESOURCES.md` is well-populated, your focus should be to find high-quality resources which will help the user acquire knowledge. Never trust your parametric knowledge.
+Before the `RESOURCES.md` is well-populated, your focus should be to find high-quality resources which will help the user acquire knowledge. Every claim you teach traces to a `RESOURCES.md` source.
 
 Some topics may require more skills than knowledge. Learning more about theoretical physics might be more knowledge-based. For yoga, more skills-based.
 

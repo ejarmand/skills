@@ -1,6 +1,6 @@
 ---
 name: pr-ping-pong
-description: Drive an issue or pull request through alternating rounds of implementation and cross-provider review — one agent implements, agents from other providers review, findings feed back, repeat. Use when asked to ping-pong a PR, iterate an issue to review-clean, get adversarial cross-model review rounds on a change, or run implement/review rallies until a PR passes.
+description: Drive an issue or pull request through alternating rallies of implementation and cross-provider review until it is review-clean.
 disable-model-invocation: true
 ---
 
@@ -44,9 +44,11 @@ gh_user="$(gh api user --jq .login)"
 ```
 
 For each configured external participant, invoke `/codex-agent` or
-`/cursor-agent` and let that adapter perform its own installed-help and
-authentication preflight. If an adapter reports missing authentication, stop
-and ask the user to log in. Never print or embed a token.
+`/cursor-agent`. Each adapter owns authentication, authority selection, session
+capture, monitoring, terminal success, and result extraction — let it perform
+its own installed-help and authentication preflight. If an adapter reports
+missing authentication, stop and ask the user to log in. Never print or embed a
+token.
 
 Resolve the target to a PR on a branch and set `checkout` — the directory every
 agent and repository check uses. Run all Git, diff, test, commit, and push steps
@@ -54,28 +56,8 @@ from `checkout`; use the repository root only to create or inspect worktrees.
 
 - **PR given** — check out its branch, confirm it is not merged or closed, record
   its head SHA; that checkout is `checkout`.
-- **Issue given** — branch from the default branch as `ppp/issue-<n>-<slug>`,
-  create a linked worktree at `REPO_ROOT/worktrees/[branch]` (e.g.
-  `worktrees/ppp/issue-42-fix-cache`), use it as `checkout`. Run rally 1 there,
-  push, then open a *draft* PR that closes the issue. Mark ready only at a
-  passing finish.
-
-For a new PR, leave the primary checkout on its current branch and exclude
-`/worktrees/` via Git info exclude — no tracked `.gitignore` change unless asked.
-
-```bash
-repo_root="$(git rev-parse --show-toplevel)"
-branch="ppp/issue-N-slug"
-worktree_path="$repo_root/worktrees/$branch"
-exclude_file="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path info/exclude)"
-grep -qxF /worktrees/ "$exclude_file" ||
-  printf '\n/worktrees/\n' >>"$exclude_file"
-mkdir -p "$(dirname "$worktree_path")"
-git -C "$repo_root" fetch origin "$default_branch"
-git -C "$repo_root" worktree add -b "$branch" "$worktree_path" \
-  "origin/$default_branch"
-checkout="$worktree_path"
-```
+- **Issue given** — read [WORKTREE.md](WORKTREE.md) and follow it to create the
+  branch, linked worktree (which becomes `checkout`), and draft PR.
 
 Pass the absolute `checkout` path and the permitted authority to every native
 worker or provider adapter.
@@ -112,12 +94,12 @@ reviewer from the rally's pass decision, and tell the user.
 ## The rally
 
 One rally is one implementation pass followed by all reviewers. Run at most the
-budgeted number.
+budgeted number. Allocate each participant — implementer and every reviewer —
+its session on rally 1 and resume that same session on later rallies so it
+carries its decisions and findings forward. Never resume one session
+concurrently.
 
 ### 1. Implement
-
-Allocate one implementation session on rally 1 and resume that same session on
-later rallies so it carries the decisions forward.
 
 - **Native subagent (default):** dispatch one implementation worker through the
   current harness's native agent interface. Give it the absolute checkout,
@@ -177,15 +159,12 @@ End with the verdict line.
 ```
 
 Invoke `/codex-agent` and `/cursor-agent` in read-only mode for their respective
-reviewers. Each adapter owns authentication, authority selection, session
-capture, monitoring, terminal success, and result extraction. If a native
-reviewer is explicitly configured, dispatch a read-only native subagent in a
-session separate from the implementer.
+reviewers. If a native reviewer is explicitly configured, dispatch a read-only
+native subagent in a session separate from the implementer.
 
-Allocate each reviewer a session on rally 1 and resume the same reviewer session
-across rallies. A reviewer never wrote the code, so continuity costs nothing and
-buys what a fresh session cannot: confirming earlier findings were fixed, and
-noticing when they were not. Never resume one session concurrently.
+Reviewer session continuity costs nothing — the reviewer never wrote the code —
+and buys what a fresh session cannot: confirming earlier findings were fixed,
+and noticing when they were not.
 
 ### 4. Publish
 
@@ -228,18 +207,9 @@ Non-blocking findings never justify another rally. Carry them into the summary.
 
 ## Merge
 
-Merge only when the user set merge-on-pass **and** all of these hold:
-
-```bash
-gh pr checks N          # all required checks passing
-gh pr view N --json mergeable,mergeStateStatus,isDraft,reviewDecision
-```
-
-Merge only after a **Pass**, green required checks, `mergeable=MERGEABLE`, a
-non-draft PR, `mergeStateStatus` of `CLEAN` or `HAS_HOOKS`, and
-`reviewDecision` that is empty or `APPROVED`. Never merge
-`CHANGES_REQUESTED` or `REVIEW_REQUIRED`, and never use `--admin`. If any
-condition fails, report it and leave the PR unmerged.
+When the user set merge-on-pass and the rally ended in a **Pass**, read
+[MERGE.md](MERGE.md) and merge only if every condition there holds. Otherwise
+leave the PR unmerged and say why in the report.
 
 ## Report
 

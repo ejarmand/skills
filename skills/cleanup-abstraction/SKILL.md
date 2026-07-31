@@ -7,8 +7,6 @@ description: Simplify over-abstracted code paths by removing one-call-site helpe
 
 ## Overview
 
-Use this skill to make code simpler.
-
 Prefer inline code, short comments, and direct branches over helper pyramids, boundary theater, and compatibility logic for stale formats.
 
 ## Core Standard
@@ -18,8 +16,8 @@ Follow these rules unless there is a direct, stated reason not to:
 - Focus on brevity and clarity.
 - Avoid helper methods unless the same logic is duplicated more than 3 times.
 - Treat that more-than-three-uses rule as the default for step helpers; the
-  deletion test wins for a stable domain module that concentrates complexity
-  behind a small interface.
+  **deletion test** (defined in `/codebase-design`) wins for a stable domain
+  module that concentrates complexity behind a small interface.
 - Let underlying packages raise errors unless context truly needs to be added.
 - Reject stale or non-canonical input shapes instead of adding broad compatibility support.
 
@@ -81,7 +79,7 @@ If a wrapper function is acting like a comment in function form, inline it and w
 
 Keep a helper only when at least one of these is true:
 
-- it is reused more than 3 times
+- it clears the more-than-three-uses bar
 - it isolates a branch that is hard to parse inline
 - it prevents a subtle bug rather than just visual clutter
 - it expresses a stable domain concept, not a step in one flow
@@ -105,26 +103,9 @@ Ask these before adding or keeping an abstraction:
 2. Would a short comment be clearer than a new function?
 3. Does this remove duplication, or only hide a short sequence?
 4. Is this supporting production behavior, or stale tests and fixtures?
-5. If this helper or module disappeared, would the caller become simpler?
+5. Does it pass the deletion test?
 
 If the answers are weak, inline it.
-
-## Concrete Biases
-
-Bias toward:
-
-- one module instead of two when the split only adds routing
-- one function with two real branches instead of five helper layers
-- direct `if wrapper_checkpoint: ... else: ...`
-- comments over `_resolve_*` and `_finalize_*` scaffolding
-
-Bias against:
-
-- `ResolvedX`, `PreparedX`, `RuntimeX` objects that carry little weight
-- private `_step_*` chains in narrow flows
-- helper pyramids in loaders and asset-prep code
-- package APIs built around script internals
-- added support for stale data formats when the fixture should be updated instead
 
 ## Success Criteria
 
