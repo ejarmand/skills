@@ -30,7 +30,8 @@ Break the work into **tracer bullet** tickets.
 
 - Each slice cuts a narrow but COMPLETE path through every layer (schema, API, UI, tests) — vertical, NOT a horizontal slice of one layer
 - A completed slice is demoable or verifiable on its own
-- Each slice is sized to fit in a single fresh context window
+- Each slice is one **reviewable PR** — a diff a single rally reviewer can judge whole
+- Slices are cut on **merge-independence** lines — separable concerns get separate PRs, so review contention on one never blocks the other
 - Any prefactoring should be done first
 
 </vertical-slice-rules>

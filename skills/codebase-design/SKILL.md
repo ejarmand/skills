@@ -1,6 +1,6 @@
 ---
 name: codebase-design
-description: Shared vocabulary for designing deep modules. Use when the user wants to design or improve a module's interface, find deepening opportunities, decide where a seam goes, make code more testable or AI-navigable, or when another skill needs the deep-module vocabulary.
+description: Shared vocabulary for designing deep modules, and home of the unified code standard (STANDARD.md). Use when the user wants to design or improve a module's interface, find deepening opportunities, decide where a seam goes, make code more testable or AI-navigable, or when another skill needs the deep-module vocabulary or the code standard.
 ---
 
 # Codebase Design
@@ -110,5 +110,6 @@ Good interfaces make testing natural:
 
 ## Going deeper
 
+- **The unified code standard** — see [STANDARD.md](STANDARD.md): the bar structure must clear to exist (rule of three or the deletion test), module merge/split by reasons-to-change, boundary rules, and the named smells. `/code-review` pastes it into its Standards sub-agent; implementers hold their diff to it before review.
 - **Deepening a cluster given its dependencies** — see [DEEPENING.md](DEEPENING.md): dependency categories, seam discipline, and replace-don't-layer testing.
 - **Exploring alternative interfaces** — see [DESIGN-IT-TWICE.md](DESIGN-IT-TWICE.md): spin up parallel sub-agents to design the interface several radically different ways, then compare on depth, locality, and seam placement.
