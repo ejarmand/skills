@@ -2,3 +2,5 @@ interface:
   display_name: "Cross-Provider Review"
   short_description: "Publish an independent review of a pinned PR diff"
   default_prompt: "Use $cross-provider-review to review this GitHub pull request through an independent provider and publish the appropriate review or self-PR comment."
+policy:
+  allow_implicit_invocation: false

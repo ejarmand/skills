@@ -62,9 +62,17 @@ profile_sandbox_md5="$(md5 "$PROFILE_DIR/sandbox.json")"
 
 obs() { sed -n "s/^$2=//p" "$1" | head -n 1; }
 
+# --- test 0: the two profile permission copies must not drift --------------
+t=t0
+if [ "$(jq -S '.permissions' "$PROFILE_DIR/cli.json")" = "$(jq -S '.permissions' "$PROFILE_DIR/cli-config.json")" ]; then
+  pass "$t cli.json and cli-config.json permissions in sync"
+else
+  fail "$t: cli-config.json permissions drifted from cli.json"
+fi
+
 # --- test 1: success with no pre-existing Cursor config --------------------
 t=t1
-ws="$TMP/$t"; mkdir -p "$ws"
+ws="$TMP/$t"; mkdir -p "$ws" || exit 1
 out="$TMP/$t.obs"
 rc=0
 FAKE_OUT="$out" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
@@ -80,17 +88,17 @@ grep -q "fake-cursor-result" "$TMP/$t.stdout" || fail "$t: child stdout not pres
 [ ! -e "$ws/.cursor-profile-txn" ] || fail "$t: transaction dir not removed"
 cfg="$(obs "$out" config_dir)"
 [ -n "$cfg" ] && [ ! -e "$cfg" ] || fail "$t: temp config dir not removed"
-[ "$failures" -eq 0 ] && pass "$t success + full cleanup"
+pass "$t success + full cleanup"
 
 # --- test 2: pre-existing files restored byte-exact with modes -------------
 t=t2
-ws="$TMP/$t"; mkdir -p "$ws/.cursor"
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
 printf 'user cli config %s\n' "$$" > "$ws/.cursor/cli.json"
 printf 'user sandbox config\n' > "$ws/.cursor/sandbox.json"
 chmod 600 "$ws/.cursor/cli.json"
 chmod 640 "$ws/.cursor/sandbox.json"
-cp "$ws/.cursor/cli.json" "$TMP/$t.cli.expected"
-cp "$ws/.cursor/sandbox.json" "$TMP/$t.sandbox.expected"
+cp "$ws/.cursor/cli.json" "$TMP/$t.cli.expected" || exit 1
+cp "$ws/.cursor/sandbox.json" "$TMP/$t.sandbox.expected" || exit 1
 out="$TMP/$t.obs"
 rc=0
 FAKE_OUT="$out" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
@@ -107,7 +115,7 @@ pass "$t pre-existing files restored (content + mode)"
 
 # --- test 3: child failure propagates, cleanup still runs ------------------
 t=t3
-ws="$TMP/$t"; mkdir -p "$ws/.cursor"
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
 printf 'keep me\n' > "$ws/.cursor/cli.json"
 rc=0
 FAKE_EXIT=7 "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
@@ -120,8 +128,8 @@ pass "$t child failure propagates with cleanup"
 
 # --- test 4: setup failure (symlinked policy file) prevents launch ---------
 t=t4
-ws="$TMP/$t"; mkdir -p "$ws/.cursor"
-ln -s /etc/hostname "$ws/.cursor/cli.json"
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
+ln -s /etc/hostname "$ws/.cursor/cli.json" || exit 1
 rc=0
 FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
   > /dev/null 2>&1 || rc=$?
@@ -134,8 +142,8 @@ pass "$t symlinked policy file refused before launch"
 
 # --- test 5: .cursor itself non-regular is refused -------------------------
 t=t5
-ws="$TMP/$t"; mkdir -p "$ws" "$TMP/$t-elsewhere"
-ln -s "$TMP/$t-elsewhere" "$ws/.cursor"
+ws="$TMP/$t"; mkdir -p "$ws" "$TMP/$t-elsewhere" || exit 1
+ln -s "$TMP/$t-elsewhere" "$ws/.cursor" || exit 1
 rc=0
 FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
   > /dev/null 2>&1 || rc=$?
@@ -146,7 +154,7 @@ pass "$t symlinked .cursor dir refused"
 
 # --- test 6: termination signal forwarded, cleanup runs --------------------
 t=t6
-ws="$TMP/$t"; mkdir -p "$ws/.cursor"
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
 printf 'sig original\n' > "$ws/.cursor/cli.json"
 out="$TMP/$t.obs"
 FAKE_OUT="$out" FAKE_SLEEP=30 "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
@@ -166,7 +174,7 @@ pass "$t signal forwarded, workspace restored"
 
 # --- test 7: same-workspace contention rejected ----------------------------
 t=t7
-ws="$TMP/$t"; mkdir -p "$ws"
+ws="$TMP/$t"; mkdir -p "$ws" || exit 1
 out="$TMP/$t.obs"
 FAKE_OUT="$out" FAKE_SLEEP=30 "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
   > /dev/null 2>&1 &
@@ -182,7 +190,7 @@ pass "$t concurrent same-workspace runner rejected"
 
 # --- test 8: cleanup failure reported even when child succeeds -------------
 t=t8
-ws="$TMP/$t"; mkdir -p "$ws/.cursor"
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
 printf 'cleanup original\n' > "$ws/.cursor/cli.json"
 out="$TMP/$t.obs"
 FAKE_OUT="$out" FAKE_SLEEP=3 "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
@@ -198,13 +206,13 @@ pass "$t cleanup failure surfaces as failure"
 
 # --- test 9: stale transaction recovered on next invocation ----------------
 t=t9
-ws="$TMP/$t"; mkdir -p "$ws/.cursor"
-txn="$ws/.cursor-profile-txn"; mkdir -p "$txn/backup"
-stale_cfg="$TMP/$t-stale-config"; mkdir -p "$stale_cfg"
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
+txn="$ws/.cursor-profile-txn"; mkdir -p "$txn/backup" || exit 1
+stale_cfg="$TMP/$t-stale-config"; mkdir -p "$stale_cfg" || exit 1
 printf 'stale leftover\n' > "$stale_cfg/cli-config.json"
 printf 'original cli\n' > "$txn/backup/cli.json"
-cp "$PROFILE_DIR/cli.json" "$ws/.cursor/cli.json"        # crashed run left profile installed
-cp "$PROFILE_DIR/sandbox.json" "$ws/.cursor/sandbox.json"
+cp "$PROFILE_DIR/cli.json" "$ws/.cursor/cli.json" || exit 1   # crashed run left profile installed
+cp "$PROFILE_DIR/sandbox.json" "$ws/.cursor/sandbox.json" || exit 1
 {
   echo "cursordir preexisting"
   echo "file cli.json present 600"
@@ -229,7 +237,7 @@ rc=0; "$RUNNER" --profile github-pr-reviewer > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 2 ] || fail "$t: missing workspace exit $rc (want 2)"
 rc=0; "$RUNNER" --workspace relative/path --profile github-pr-reviewer > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 2 ] || fail "$t: relative workspace exit $rc (want 2)"
-ws="$TMP/$t"; mkdir -p "$ws"
+ws="$TMP/$t"; mkdir -p "$ws" || exit 1
 rc=0; "$RUNNER" --workspace "$ws" --profile no-such-profile > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 2 ] || fail "$t: unknown profile exit $rc (want 2)"
 pass "$t argument validation"

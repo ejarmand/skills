@@ -119,25 +119,34 @@ comment_prompt() {
 
 # --- providers -------------------------------------------------------------
 
+run_claude() {
+  # One profiled invocation; emits only the extracted `.result` text. Fails
+  # closed when the process failed, the envelope is unparseable, or
+  # `is_error` is set — the raw envelope goes to stderr for diagnosis.
+  local raw rc=0
+  raw="$(cd "$workspace" && claude -p --output-format json \
+    --settings "$CLAUDE_PROFILE" --setting-sources "" "$1")" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$raw" >&2
+    return "$rc"
+  fi
+  jq -er 'select(.is_error == false) | .result' <<<"$raw" \
+    || { printf '%s\n' "$raw" >&2; return 1; }
+}
+
 probe_claude() {
   echo "== claude ($(claude --version 2>/dev/null | head -n 1)) =="
-  local marker="conformance-claude-$$" out rc=0
+  local marker="conformance-claude-$$" out rc
   record_canaries
-  out="$(cd "$workspace" && claude -p --output-format json \
-    --settings "$CLAUDE_PROFILE" --setting-sources "" "$(read_prompt)")" || rc=$?
+  rc=0; out="$(run_claude "$(read_prompt)")" || rc=$?
   show "claude read" "$out"
-  [ "$rc" -eq 0 ] || fail "claude: read probe exited $rc"
-  assert_read_output claude "$out"
-  rc=0
-  out="$(cd "$workspace" && claude -p --output-format json \
-    --settings "$CLAUDE_PROFILE" --setting-sources "" "$(denied_prompt)")" || rc=$?
+  if [ "$rc" -eq 0 ]; then assert_read_output claude "$out"; else fail "claude: read probe failed ($rc)"; fi
+  rc=0; out="$(run_claude "$(denied_prompt)")" || rc=$?
   show "claude denied" "$out"
   assert_no_side_effects claude
-  rc=0
-  out="$(cd "$workspace" && claude -p --output-format json \
-    --settings "$CLAUDE_PROFILE" --setting-sources "" "$(comment_prompt "$marker")")" || rc=$?
+  rc=0; out="$(run_claude "$(comment_prompt "$marker")")" || rc=$?
   show "claude comment" "$out"
-  [ "$rc" -eq 0 ] || fail "claude: comment probe exited $rc"
+  [ "$rc" -eq 0 ] || fail "claude: comment probe failed ($rc)"
   assert_pr_comment claude "$marker"
 }
 
@@ -148,22 +157,41 @@ codex_dispatch() {
     "Spawn one fresh github_pr_reviewer child (no full-history fork) for the following task, wait for it, and relay its result verbatim. Task: $1"
 }
 
+run_codex() {
+  # One profiled dispatch; emits only the final agent_message text. Fails
+  # closed when the process failed, the stream has no `turn.completed`, or
+  # no agent_message — the raw stream goes to stderr for diagnosis.
+  local raw rc=0
+  raw="$(codex_dispatch "$1")" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$raw" >&2
+    return "$rc"
+  fi
+  jq -rs '
+    if ([.[] | select(.type == "turn.completed")] | length) == 0
+    then ("codex stream has no turn.completed") | halt_error(1)
+    else [.[] | select(.type == "item.completed" and .item.type == "agent_message")]
+         | if length == 0
+           then ("codex stream has no agent_message") | halt_error(1)
+           else .[-1].item.text
+           end
+    end' <<<"$raw" \
+    || { printf '%s\n' "$raw" >&2; return 1; }
+}
+
 probe_codex() {
   echo "== codex ($(codex --version 2>/dev/null | head -n 1)) =="
-  local marker="conformance-codex-$$" out rc=0
+  local marker="conformance-codex-$$" out rc
   record_canaries
-  out="$(codex_dispatch "$(read_prompt)")" || rc=$?
+  rc=0; out="$(run_codex "$(read_prompt)")" || rc=$?
   show "codex read" "$out"
-  [ "$rc" -eq 0 ] || fail "codex: read probe exited $rc"
-  assert_read_output codex "$out"
-  rc=0
-  out="$(codex_dispatch "$(denied_prompt)")" || rc=$?
+  if [ "$rc" -eq 0 ]; then assert_read_output codex "$out"; else fail "codex: read probe failed ($rc)"; fi
+  rc=0; out="$(run_codex "$(denied_prompt)")" || rc=$?
   show "codex denied" "$out"
   assert_no_side_effects codex
-  rc=0
-  out="$(codex_dispatch "$(comment_prompt "$marker")")" || rc=$?
+  rc=0; out="$(run_codex "$(comment_prompt "$marker")")" || rc=$?
   show "codex comment" "$out"
-  [ "$rc" -eq 0 ] || fail "codex: comment probe exited $rc"
+  [ "$rc" -eq 0 ] || fail "codex: comment probe failed ($rc)"
   assert_pr_comment codex "$marker"
 }
 

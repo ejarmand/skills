@@ -7,6 +7,10 @@ Two rules bind everything below:
   ("possible Feature Envy"), never a hard violation — and skip anything
   tooling already enforces.
 
+This standard governs code. Skills and other agent-facing docs are a
+different domain: review those against `skills/writing-great-skills/SKILL.md`
+instead.
+
 ## **reduce**, reuse, recycle
 Focus on locality, drop unecessary abstractions:
 - Agreesively cut adapters
