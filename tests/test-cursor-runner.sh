@@ -45,6 +45,7 @@ cat > "$FAKE_BIN/cursor-agent" <<'FAKE'
   done
   if [ -f "${CURSOR_CONFIG_DIR:-/nonexistent}/cli-config.json" ]; then
     echo "global_config=present"
+    echo "global_config_md5=$(md5sum < "$CURSOR_CONFIG_DIR/cli-config.json" | cut -d' ' -f1)"
   else
     echo "global_config=absent"
   fi
@@ -62,13 +63,14 @@ profile_sandbox_md5="$(md5 "$PROFILE_DIR/sandbox.json")"
 
 obs() { sed -n "s/^$2=//p" "$1" | head -n 1; }
 
-# --- test 0: the two profile permission copies must not drift --------------
+# --- test 0: global config is derived from cli.json, never a second copy ---
 t=t0
-if [ "$(jq -S '.permissions' "$PROFILE_DIR/cli.json")" = "$(jq -S '.permissions' "$PROFILE_DIR/cli-config.json")" ]; then
-  pass "$t cli.json and cli-config.json permissions in sync"
+if [ -e "$PROFILE_DIR/cli-config.json" ]; then
+  fail "$t: profile ships a cli-config.json copy; cli.json is the single source"
 else
-  fail "$t: cli-config.json permissions drifted from cli.json"
+  pass "$t cli.json is the only permissions source in the profile"
 fi
+derived_config_md5="$(jq '{version: 1} + .' "$PROFILE_DIR/cli.json" | md5sum | cut -d' ' -f1)"
 
 # --- test 1: success with no pre-existing Cursor config --------------------
 t=t1
@@ -81,6 +83,7 @@ FAKE_OUT="$out" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
 [ "$(obs "$out" ws_cli.json_md5)" = "$profile_cli_md5" ] || fail "$t: child did not see profile cli.json"
 [ "$(obs "$out" ws_sandbox.json_md5)" = "$profile_sandbox_md5" ] || fail "$t: child did not see profile sandbox.json"
 [ "$(obs "$out" global_config)" = "present" ] || fail "$t: child did not see temp cli-config.json"
+[ "$(obs "$out" global_config_md5)" = "$derived_config_md5" ] || fail "$t: temp cli-config.json is not derived from cli.json"
 [ "$(obs "$out" cwd)" = "$(cd "$ws" && pwd -P)" ] || fail "$t: child cwd was not the workspace"
 [ "$(obs "$out" args)" = "-p --trust task" ] || fail "$t: forwarded args mangled: $(obs "$out" args)"
 grep -q "fake-cursor-result" "$TMP/$t.stdout" || fail "$t: child stdout not preserved"
@@ -208,7 +211,9 @@ pass "$t cleanup failure surfaces as failure"
 t=t9
 ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
 txn="$ws/.cursor-profile-txn"; mkdir -p "$txn/backup" || exit 1
-stale_cfg="$TMP/$t-stale-config"; mkdir -p "$stale_cfg" || exit 1
+# The stale tmpconfig must sit where the runner's own mktemp would have put
+# it — recovery refuses to delete anything else.
+stale_cfg="$(mktemp -d "${TMPDIR:-/tmp}/cursor-profile.XXXXXXXX")" || exit 1
 printf 'stale leftover\n' > "$stale_cfg/cli-config.json"
 printf 'original cli\n' > "$txn/backup/cli.json"
 cp "$PROFILE_DIR/cli.json" "$ws/.cursor/cli.json" || exit 1   # crashed run left profile installed
@@ -231,6 +236,33 @@ rc=0
 [ ! -e "$txn" ] || fail "$t: transaction dir not removed after recovery"
 pass "$t stale transaction recovered, then normal run"
 
+# --- test 9b: hostile stale manifest fails closed --------------------------
+# A prepared checkout can pre-seed the transaction journal; recovery must
+# refuse its traversal names and out-of-root deletion targets.
+t=t9b
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
+txn="$ws/.cursor-profile-txn"; mkdir -p "$txn/backup" || exit 1
+decoy="$TMP/$t-decoy"; mkdir -p "$decoy" || exit 1
+printf 'precious\n' > "$decoy/keep"
+printf 'attacker payload\n' > "$txn/backup/cli.json"
+{
+  echo "cursordir preexisting"
+  echo "file ../outside present 644"
+  echo "file cli.json present 644"
+  echo "tmpconfig $decoy"
+} > "$txn/manifest"
+sleep 0.01 & dead_pid=$!; wait "$dead_pid" 2>/dev/null
+echo "pid=$dead_pid" > "$txn/owner"
+rc=0
+FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
+  > /dev/null 2>&1 || rc=$?
+[ "$rc" -eq 70 ] || fail "$t: exit $rc (want 70 = fail closed)"
+[ ! -e "$ws/launched" ] || fail "$t: launched despite hostile stale manifest"
+[ ! -e "$ws/outside" ] || fail "$t: traversal manifest name escaped .cursor"
+[ -f "$decoy/keep" ] || fail "$t: out-of-root tmpconfig target was deleted"
+[ -e "$txn" ] || fail "$t: refused transaction dir should be left for inspection"
+pass "$t hostile stale manifest refused, targets intact"
+
 # --- test 10: argument validation ------------------------------------------
 t=t10
 rc=0; "$RUNNER" --profile github-pr-reviewer > /dev/null 2>&1 || rc=$?
@@ -241,6 +273,19 @@ ws="$TMP/$t"; mkdir -p "$ws" || exit 1
 rc=0; "$RUNNER" --workspace "$ws" --profile no-such-profile > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 2 ] || fail "$t: unknown profile exit $rc (want 2)"
 pass "$t argument validation"
+
+# --- test 11: authority-changing child flags rejected ----------------------
+t=t11
+ws="$TMP/$t"; mkdir -p "$ws" || exit 1
+for bad in --force --auto-review --sandbox --sandbox=disabled --workspace -w --config-dir=/elsewhere; do
+  rc=0
+  FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
+    -- -p "$bad" "task" > /dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "$t: $bad exit $rc (want 2)"
+done
+[ ! -e "$ws/launched" ] || fail "$t: launched despite authority-changing flag"
+[ ! -e "$ws/.cursor-profile-txn" ] || fail "$t: rejection should precede locking"
+pass "$t authority-changing flags rejected before launch"
 
 # ---------------------------------------------------------------------------
 if [ "$failures" -gt 0 ]; then

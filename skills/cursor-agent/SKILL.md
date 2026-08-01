@@ -7,6 +7,8 @@ description: Run Cursor Agent CLI as an independent coding agent for implementat
 
 Run `cursor-agent` from the intended workspace, give it a concrete outcome, monitor it at the task's time scale, and preserve its session ID whenever follow-up work is likely.
 
+Read `/cross-provider-agent` first and apply its doctrine to the whole dispatch; this skill is only the Cursor transport.
+
 ## Check the CLI and authentication
 
 Treat the installed CLI help as authoritative because Cursor Agent is evolving:
@@ -141,4 +143,4 @@ Cursor takes permission and sandbox policy only from configuration files, so pro
 
 The runner stages the profile under an isolated `CURSOR_CONFIG_DIR` and workspace `.cursor/` snapshot, supervises the child, and restores everything byte-for-byte (mechanics in the script header). Setup failure prevents launch; cleanup failure is failure even when the child succeeded; a workspace lock rejects concurrent runners, so parallel dispatches need separate workspaces; after an untrappable crash, the next invocation recovers the stale transaction.
 
-Run profiled dispatches with plain `-p --trust` (deny-unless-allowed) and never `--force`, so the profile's allowlist is the whole command surface. The profile pairs multi-word `Shell(...)` allows — live-verified but undocumented — with a `sandbox.json` GitHub-only network allowlist as defense in depth.
+Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the profile's allowlist is the whole command surface; the runner rejects authority-changing flags (`--force`, `--auto-review`, `--sandbox`, workspace and config overrides). `cli.json` is the profile's canonical permissions object — the runner derives the global config Cursor needs from it at stage time. The profile pairs multi-word `Shell(...)` allows — live-verified but undocumented — with a `sandbox.json` GitHub-only network allowlist as defense in depth.

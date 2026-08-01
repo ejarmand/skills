@@ -9,6 +9,11 @@
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME [--] [cursor-agent args...]
 #
+# The runner owns the child's authority envelope — workspace (cwd), config
+# isolation (CURSOR_CONFIG_DIR), and the staged profile — and rejects
+# cursor-agent flags that would widen or redirect it (--force, --auto-review,
+# --sandbox, workspace and config overrides).
+#
 # Exit status: the child's, unless the arguments were invalid (2), setup
 # failed before launch (71), another live runner holds the workspace (75),
 # or cleanup failed after a successful child (70).
@@ -48,6 +53,13 @@ done
 
 [ -n "$workspace" ] || usage
 [ -n "$profile" ] || usage
+for arg in "$@"; do
+  case "$arg" in
+    --force|--force=*|-f|--auto-review|--auto-review=*|--sandbox|--sandbox=*|--workspace|--workspace=*|-w|-w=*|--config-dir|--config-dir=*)
+      err "flag conflicts with the profile's authority envelope: $arg"
+      exit "$EX_USAGE" ;;
+  esac
+done
 case "$workspace" in
   /*) ;;
   *) err "workspace must be an absolute path: $workspace"; exit "$EX_USAGE" ;;
@@ -57,9 +69,10 @@ esac
 script_dir="$(cd "$(dirname "$0")" && pwd)" || { err "cannot resolve script directory"; exit "$EX_SETUP"; }
 profile_dir="$(dirname "$script_dir")/profiles/$profile"
 [ -d "$profile_dir" ] || { err "unknown profile: $profile"; exit "$EX_USAGE"; }
-for f in "${TARGETS[@]}" cli-config.json; do
+for f in "${TARGETS[@]}"; do
   [ -f "$profile_dir/$f" ] || { err "profile is missing $f"; exit "$EX_SETUP"; }
 done
+command -v jq > /dev/null 2>&1 || { err "jq is required to derive cli-config.json"; exit "$EX_SETUP"; }
 
 cursor_dir="$workspace/.cursor"
 txn_dir="$workspace/.cursor-profile-txn"
@@ -68,13 +81,27 @@ backup_dir="$txn_dir/backup"
 tmp_config=""
 
 # --- restoration (shared by cleanup, setup rollback, and stale recovery) ---
-# Reads the manifest and puts the workspace back exactly as recorded.
+# Reads the manifest and puts the workspace back exactly as recorded. In the
+# stale-recovery path the manifest is workspace-resident and thus untrusted —
+# a prepared checkout can pre-seed the journal — so every path it names is
+# validated against what this runner could itself have written, and anything
+# else fails closed.
 restore_from_manifest() {
   local failed=0 kind name state mode
   [ -f "$manifest" ] || return 0  # crash before the manifest: nothing was installed
   while read -r kind name state mode; do
     [ "$kind" = file ] || continue
+    case "$name" in
+      cli.json|sandbox.json) ;;
+      *) err "manifest names an unexpected file '$name'; refusing"
+         failed=1; continue ;;
+    esac
     if [ "$state" = present ]; then
+      case "$mode" in
+        [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) ;;
+        *) err "manifest carries invalid mode '$mode' for $name; refusing"
+           failed=1; continue ;;
+      esac
       if ! cp "$backup_dir/$name" "$cursor_dir/$name" || ! chmod "$mode" "$cursor_dir/$name"; then
         err "failed to restore $cursor_dir/$name"
         failed=1
@@ -97,7 +124,16 @@ restore_from_manifest() {
   fi
   local tmp
   tmp="$(sed -n 's/^tmpconfig //p' "$manifest" | head -n 1)"
-  if [ -n "$tmp" ] && [ -d "$tmp" ]; then
+  if [ -n "$tmp" ] && [ -e "$tmp" ]; then
+    case "$tmp" in
+      "${TMPDIR:-/tmp}"/cursor-profile.????????) ;;
+      *) err "manifest tmpconfig path is outside the runner's temp root; refusing: $tmp"
+         return 1 ;;
+    esac
+    if [ -L "$tmp" ] || [ ! -d "$tmp" ]; then
+      err "manifest tmpconfig path is not a plain directory; refusing: $tmp"
+      return 1
+    fi
     if ! rm -rf "$tmp"; then
       err "failed to remove temporary config dir $tmp"
       failed=1
@@ -160,9 +196,11 @@ for t in "${TARGETS[@]}"; do
 done
 
 # --- temporary global config (isolates the user's CURSOR_CONFIG_DIR) -------
+# cli.json is the profile's canonical permissions object; the global config
+# Cursor requires is derived from it here, so the two can never drift.
 tmp_config="$(mktemp -d "${TMPDIR:-/tmp}/cursor-profile.XXXXXXXX")" || setup_fail
 echo "tmpconfig $tmp_config" >> "$manifest" || setup_fail
-cp "$profile_dir/cli-config.json" "$tmp_config/cli-config.json" || setup_fail
+jq '{version: 1} + .' "$profile_dir/cli.json" > "$tmp_config/cli-config.json" || setup_fail
 
 # --- atomic install --------------------------------------------------------
 mkdir -p "$cursor_dir" || setup_fail

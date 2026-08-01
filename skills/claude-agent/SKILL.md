@@ -9,6 +9,9 @@ Run `claude -p` from the intended workspace, give it a bounded outcome,
 monitor it at the task's time scale, and preserve its session ID when
 follow-up work is likely.
 
+Read `/cross-provider-agent` first and apply its doctrine to the whole
+dispatch; this skill is only the Claude transport.
+
 ## Check the CLI and authentication
 
 Treat installed help as authoritative because Claude Code evolves:

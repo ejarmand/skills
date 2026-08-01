@@ -209,6 +209,13 @@ do not silently amend issue #14's “coordinator publishes” rule.
 
 ## Recommended shape for issue #14
 
+> **Superseded.** Issue #14 was later amended: the implemented profile is
+> `github-pr-reviewer`, and the reviewer publishes its own review through an
+> allowed `gh pr comment` rather than coordinator-side publication. The
+> implemented contract lives in
+> `skills/cross-provider-agent/profiles/github-pr-reviewer.md`; the shape
+> below is the pre-amendment recommendation, kept as the research record.
+
 `cross-provider-agent` owns the logical `github-readonly-reviewer` authority
 contract and selects it. The provider adapters own the concrete configuration
 because they already own CLI flags, config locations, authentication, and
