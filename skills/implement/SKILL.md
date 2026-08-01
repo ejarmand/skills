@@ -12,8 +12,7 @@ independent review happens outside this session. Follow this sequence:
 1. Use `/tdd`, working in red → green slices. Choose the seams under test per
    its seam doctrine — prefer seams the spec establishes — and note them.
 2. Run focused typechecking and tests for the touched behavior.
-3. Run the full typecheck and test suite once at the end.
-4. Commit the verified work to the current branch. Declare the tested seams in
+3. Commit the verified work to the current branch. Declare the tested seams in
    the PR description (or the final report when no PR exists) so reviewers can
    validate the seam choice.
 
