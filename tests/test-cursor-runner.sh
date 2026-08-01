@@ -316,6 +316,14 @@ rc=0
 FAKE_TOUCH="$ws/launched-sep" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
   -- -p --add-dir "$ws" "task" > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 2 ] || fail "$t: separated --add-dir value exit $rc (want 2)"
+for smuggle in "--model --yolo" "--output-format --force" "-m -w"; do
+  rc=0
+  # shellcheck disable=SC2086
+  FAKE_TOUCH="$ws/launched-smuggle" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
+    -- -p $smuggle "task" > /dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "$t: flag smuggled as value ($smuggle) exit $rc (want 2)"
+done
+[ ! -e "$ws/launched-smuggle" ] || fail "$t: launched with a flag smuggled as a value"
 [ ! -e "$ws/launched" ] && [ ! -e "$ws/launched-sep" ] || fail "$t: launched despite disallowed flag"
 [ ! -e "$ws/.cursor-profile-txn" ] || fail "$t: rejection should precede locking"
 rc=0

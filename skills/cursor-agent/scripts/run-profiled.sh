@@ -22,8 +22,10 @@
 # the removal of an unrelated .cursor directory or temp path.
 #
 # Exit status: the child's, unless the arguments were invalid (2), setup
-# failed before launch (71), another live runner holds the workspace (75),
-# or cleanup failed after a successful child (70).
+# failed before launch with a clean rollback (71), another live runner holds
+# the workspace (75), or a rollback/cleanup failure left the journal in
+# place for recovery (70) — whether that failure happened before launch or
+# after a successful child.
 #
 # Signals: INT/TERM/HUP are forwarded to the child; cleanup then runs on the
 # normal path. SIGKILL and machine failure cannot be trapped — the next
@@ -64,6 +66,9 @@ expect_value=""
 for arg in "$@"; do
   if [ -n "$expect_value" ]; then
     expect_value=""
+    case "$arg" in
+      -*) err "child argument value looks like a flag: $arg"; exit "$EX_USAGE" ;;
+    esac
     continue
   fi
   case "$arg" in

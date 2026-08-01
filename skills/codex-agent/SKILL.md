@@ -125,6 +125,10 @@ codex exec --json --sandbox read-only -C /absolute/path/to/workspace \
 The child must be a fresh spawn; a full-history fork rejects `agent_type`.
 Role binding has an open reliability bug (openai/codex#32587) that fails
 closed here: a child without the role gets no rules, hence no network escape.
+Known gap (0.146.0, live-verified): native file tools bypass the read-only
+sandbox, so file-write denial is detect-and-reject — verify the pinned head
+and a clean tree after dispatch and discard the child's output otherwise
+(`research/agent-permission-allowlists.md` §7).
 This dispatch nests a parent CLI agent around the child, roughly doubling
 token cost — the price of leaving the workspace untouched.
 
