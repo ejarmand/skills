@@ -74,8 +74,8 @@ test uses temporary destinations and does not mutate a developer's installed
 skills:
 
 ```bash
-scripts/test-inventory.sh
-scripts/test-link-skills.sh
+tests/test-inventory.sh
+tests/test-link-skills.sh
 ```
 
 ## Provenance

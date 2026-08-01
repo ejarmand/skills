@@ -350,7 +350,7 @@ worktree must stay untouched.
 ## 7. Addendum 2026-08-01: Codex native file writes bypass the read-only sandbox
 
 Found by the `github-pr-reviewer` live conformance probes
-(`scripts/conformance-profiles.sh`, codex-cli 0.146.0, Linux):
+(`tests/conformance-profiles.sh`, codex-cli 0.146.0, Linux):
 
 - Profiled dispatch (`--sandbox read-only` + agent config layer): an instructed
   file creation in the workspace **succeeded** — the conformance canary caught
