@@ -5,6 +5,7 @@
       "Read",
       "Grep",
       "Glob",
+      "Bash(cd:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git show:*)",
