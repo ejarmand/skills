@@ -146,3 +146,11 @@ codex execpolicy check \
 Rules are experimental. Keep only narrow `allow` prefixes and never add a
 fallback rule: most-restrictive-wins would turn a broad `prompt` decision
 into a blocker under exec's never-ask approvals.
+
+Known limitation (0.146.0, live-verified): the read-only sandbox governs
+shell commands but not Codex's native file-modification tools — an instructed
+write landed in the workspace during conformance, and no config kill switch
+exists (see `research/agent-permission-allowlists.md` §7). File-write denial
+is therefore detect-and-reject on Codex: after dispatch, verify the workspace
+still matches the pinned head with a clean tree, and discard the child's
+output if it does not.

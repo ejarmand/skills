@@ -346,3 +346,32 @@ failed binding fails *closed* here (child without the role gets no rules, hence 
 network escape). Both Codex mechanisms are now live-verified; choose per dispatch:
 project-layer drop for the simple, adapter-symmetric recipe; `config_file` when the
 worktree must stay untouched.
+
+## 7. Addendum 2026-08-01: Codex native file writes bypass the read-only sandbox
+
+Found by the `github-pr-reviewer` live conformance probes
+(`scripts/conformance-profiles.sh`, codex-cli 0.146.0, Linux):
+
+- Profiled dispatch (`--sandbox read-only` + agent config layer): an instructed
+  file creation in the workspace **succeeded** — the conformance canary caught
+  `conformance-denied.txt` and a dirty tree.
+- Plain `codex exec --sandbox read-only` with no agent layer: `apply_patch`
+  created the file after a syntax retry — the bypass is provider-level, not
+  introduced by the agent config layer.
+- `-c features.apply_patch_freeform=false` did not remove the capability; the
+  model fell back to "a direct exact-byte write" and the file landed.
+- No kill switch found in the 0.146.0 schema: the `tools` section toggles only
+  `experimental_request_user_input`/`update_plan`/`web_search`, and
+  `AgentRoleToml` carries only `config_file`/`description`/`nickname_candidates`.
+- Shell writes remain sandbox-governed (on this machine every sandboxed shell
+  command fails at bwrap loopback setup — the §6 error shape — so shell
+  enforcement could not be distinguished from environment failure here).
+- `gh search issues` on openai/codex found no existing report; worth filing.
+
+Consequence: on Codex, the profile's "forbids filesystem writes" is currently
+**detect-and-reject, not prevent**. The coordinator's post-dispatch check —
+pinned head, clean tree, discard the review otherwise — is the operative
+guard, now stated in cross-provider-agent's dispatch step. A chmod-based
+transactional wrapper (drop user-write bits before dispatch, restore after)
+would convert native writes into EACCES failures and is the hardening path if
+upstream does not fix; shell `chmod +w` escape attempts stay sandbox-blocked.
