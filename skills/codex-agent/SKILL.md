@@ -9,12 +9,6 @@ Run `codex exec` from the intended workspace, give it a bounded outcome, monitor
 it at the task's time scale, and preserve its session ID when follow-up work is
 likely.
 
-Doctrine — authorization scope, least authority, prompt discipline, session
-and verification rules — lives in `/cross-provider-agent`. This skill is the
-Codex transport.
-
-## Check the CLI and authentication
-
 Treat installed help as authoritative because Codex CLI evolves:
 
 ```bash
@@ -27,8 +21,6 @@ codex login status
 If authentication is missing, ask the user to run `codex login`. Never display,
 copy, or embed authentication files or tokens.
 
-Omit `--model` unless the user requests a particular model. Otherwise use the
-configured default rather than hard-coding a model name.
 
 ## Start a worker
 
@@ -47,8 +39,7 @@ codex exec --json --sandbox workspace-write -C /absolute/path/to/repo \
   "Act as an independent worker for the current task. Implement TASK within SCOPE, verify it, do not push or modify unrelated files, do not spawn more agents, and report changed files and checks."
 ```
 
-Use `--output-schema` when downstream automation requires stable structured
-output. Use `--output-last-message` when a separate final-result file is useful;
+Use `--output-last-message` when a separate final-result file is useful;
 keep result files and JSONL logs in a temporary location unless the user asks to
 retain them because they may contain prompts, paths, or file content.
 
@@ -62,7 +53,7 @@ initial event has this form:
 ```
 
 Record that exact `thread_id` as soon as it appears so an interrupted run can
-still be resumed. Do not use `--ephemeral` when follow-up work is likely.
+still be resumed.
 
 ## Resume or adopt a worker
 
@@ -146,11 +137,3 @@ codex execpolicy check \
 Rules are experimental. Keep only narrow `allow` prefixes and never add a
 fallback rule: most-restrictive-wins would turn a broad `prompt` decision
 into a blocker under exec's never-ask approvals.
-
-Known limitation (0.146.0, live-verified): the read-only sandbox governs
-shell commands but not Codex's native file-modification tools — an instructed
-write landed in the workspace during conformance, and no config kill switch
-exists (see `research/agent-permission-allowlists.md` §7). File-write denial
-is therefore detect-and-reject on Codex: after dispatch, verify the workspace
-still matches the pinned head with a clean tree, and discard the child's
-output if it does not.
