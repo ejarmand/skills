@@ -1,6 +1,6 @@
 ---
 name: claude-agent
-description: Run Claude Code CLI headless as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to a separate Claude session, get an independent Claude pass, capture a Claude session ID, or resume and continue an earlier headless Claude run.
+description: Run Claude Code CLI headless as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to a separate Claude session, capture a Claude session ID, or resume and continue an earlier headless Claude run.
 ---
 
 # Claude Agent

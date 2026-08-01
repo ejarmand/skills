@@ -1,6 +1,6 @@
 ---
 name: codex-agent
-description: Run Codex CLI as an independent coding worker for implementation, investigation, planning, or review, then monitor and verify its result. Use when asked to delegate work through `codex exec`, get a separate Codex pass, capture a Codex session ID for follow-up work, or resume, continue, consult, or "adopt" a prior Codex session or thread ID.
+description: Run Codex CLI as an independent coding worker for implementation, investigation, planning, or review, then monitor and verify its result. Use when asked to delegate work through `codex exec`, capture a Codex session ID for follow-up work, or resume, continue, consult, or "adopt" a prior Codex session or thread ID.
 ---
 
 # Codex Agent

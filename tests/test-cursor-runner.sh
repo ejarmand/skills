@@ -56,7 +56,24 @@ echo "fake-cursor-result"
 exit "${FAKE_EXIT:-0}"
 FAKE
 chmod +x "$FAKE_BIN/cursor-agent" || exit 1
+
+# Fault-injection cp: passes through to the real cp except at two env-gated
+# points the rollback-failure test (t13) uses; other tests are unaffected.
+cat > "$FAKE_BIN/cp" <<'FAKE'
+#!/usr/bin/env bash
+if [ "${FAKE_CP_FAIL:-}" = 1 ]; then
+  case "$1" in
+    */profiles/github-pr-reviewer/sandbox.json) echo "cp: injected install failure" >&2; exit 1 ;;
+    */.cursor-profile-txn/backup/*) echo "cp: injected restore failure" >&2; exit 1 ;;
+  esac
+fi
+exec /bin/cp "$@"
+FAKE
+chmod +x "$FAKE_BIN/cp" || exit 1
 export PATH="$FAKE_BIN:$PATH"
+
+# Hermetic registry root: the runner's recovery authentication state.
+export CURSOR_PROFILE_STATE_DIR="$TMP/state"
 
 profile_cli_md5="$(md5 "$PROFILE_DIR/cli.json")"
 profile_sandbox_md5="$(md5 "$PROFILE_DIR/sandbox.json")"
@@ -219,16 +236,25 @@ printf 'original cli\n' > "$txn/backup/cli.json"
 cp "$PROFILE_DIR/cli.json" "$ws/.cursor/cli.json" || exit 1   # crashed run left profile installed
 cp "$PROFILE_DIR/sandbox.json" "$ws/.cursor/sandbox.json" || exit 1
 {
-  echo "cursordir preexisting"
   echo "file cli.json present 600"
   echo "file sandbox.json absent"
-  echo "tmpconfig $stale_cfg"
 } > "$txn/manifest"
 sleep 0.01 & dead_pid=$!; wait "$dead_pid" 2>/dev/null   # a real, definitely-dead pid
-echo "pid=$dead_pid" > "$txn/owner"
+{ echo "pid=$dead_pid"; echo "nonce=cafe$t"; } > "$txn/owner"
+# The registry entry outside the workspace is what authenticates the journal
+# and carries the removal-directing facts.
+ws_key="$(printf '%s' "$(cd "$ws" && pwd -P)" | md5sum | cut -d' ' -f1)"
+mkdir -p "$CURSOR_PROFILE_STATE_DIR" || exit 1
+{
+  echo "workspace $ws"
+  echo "nonce cafe$t"
+  echo "cursordir preexisting"
+  echo "tmpconfig $stale_cfg"
+} > "$CURSOR_PROFILE_STATE_DIR/$ws_key"
 rc=0
 "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 0 ] || fail "$t: exit $rc (want 0)"
+[ ! -e "$CURSOR_PROFILE_STATE_DIR/$ws_key" ] || fail "$t: registry entry not cleared after recovery + clean run"
 [ "$(cat "$ws/.cursor/cli.json")" = "original cli" ] || fail "$t: stale cli.json not recovered"
 [ "$(mode_of "$ws/.cursor/cli.json")" = "600" ] || fail "$t: recovered cli.json mode wrong"
 [ ! -e "$ws/.cursor/sandbox.json" ] || fail "$t: stale sandbox.json not removed"
@@ -237,8 +263,9 @@ rc=0
 pass "$t stale transaction recovered, then normal run"
 
 # --- test 9b: hostile stale manifest fails closed --------------------------
-# A prepared checkout can pre-seed the transaction journal; recovery must
-# refuse its traversal names and out-of-root deletion targets.
+# A prepared checkout can pre-seed the transaction journal; without a
+# matching runner-owned registry entry, recovery refuses it wholesale —
+# traversal names and out-of-root deletion targets never even get parsed.
 t=t9b
 ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
 txn="$ws/.cursor-profile-txn"; mkdir -p "$txn/backup" || exit 1
@@ -274,18 +301,72 @@ rc=0; "$RUNNER" --workspace "$ws" --profile no-such-profile > /dev/null 2>&1 || 
 [ "$rc" -eq 2 ] || fail "$t: unknown profile exit $rc (want 2)"
 pass "$t argument validation"
 
-# --- test 11: authority-changing child flags rejected ----------------------
+# --- test 11: child arguments are allowlisted ------------------------------
 t=t11
 ws="$TMP/$t"; mkdir -p "$ws" || exit 1
-for bad in --force --auto-review --sandbox --sandbox=disabled --workspace -w --config-dir=/elsewhere; do
+for bad in --force --yolo --auto-review --approve-mcps --sandbox --sandbox=disabled \
+  --workspace -w --config-dir=/elsewhere --add-dir --plugin-dir --resume=abc --continue \
+  --endpoint=http://example.invalid; do
   rc=0
   FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
     -- -p "$bad" "task" > /dev/null 2>&1 || rc=$?
   [ "$rc" -eq 2 ] || fail "$t: $bad exit $rc (want 2)"
 done
-[ ! -e "$ws/launched" ] || fail "$t: launched despite authority-changing flag"
+rc=0
+FAKE_TOUCH="$ws/launched-sep" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
+  -- -p --add-dir "$ws" "task" > /dev/null 2>&1 || rc=$?
+[ "$rc" -eq 2 ] || fail "$t: separated --add-dir value exit $rc (want 2)"
+[ ! -e "$ws/launched" ] && [ ! -e "$ws/launched-sep" ] || fail "$t: launched despite disallowed flag"
 [ ! -e "$ws/.cursor-profile-txn" ] || fail "$t: rejection should precede locking"
-pass "$t authority-changing flags rejected before launch"
+rc=0
+FAKE_TOUCH="$ws/launched-ok" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
+  -- -p --output-format json --model default-model --trust "task" > /dev/null 2>&1 || rc=$?
+[ "$rc" -eq 0 ] || fail "$t: allowlisted argument set exit $rc (want 0)"
+[ -e "$ws/launched-ok" ] || fail "$t: allowlisted argument set did not launch"
+pass "$t child arguments allowlisted (separated and = forms rejected)"
+
+# --- test 12: unauthenticated journal cannot direct removals ---------------
+# Owner spec: pre-seed `cursordir created` and a same-pattern temp path;
+# both unrelated sentinels must survive and no agent may launch.
+t=t12
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
+printf 'sentinel\n' > "$ws/.cursor/user-file"
+txn="$ws/.cursor-profile-txn"; mkdir -p "$txn/backup" || exit 1
+lure="$(mktemp -d "${TMPDIR:-/tmp}/cursor-profile.XXXXXXXX")" || exit 1
+printf 'sentinel\n' > "$lure/keep"
+{
+  echo "cursordir created"
+  echo "tmpconfig $lure"
+} > "$txn/manifest"
+sleep 0.01 & dead_pid=$!; wait "$dead_pid" 2>/dev/null
+echo "pid=$dead_pid" > "$txn/owner"      # no nonce, no registry entry
+rc=0
+FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer -- -p "x" \
+  > /dev/null 2>&1 || rc=$?
+[ "$rc" -eq 70 ] || fail "$t: exit $rc (want 70 = fail closed)"
+[ ! -e "$ws/launched" ] || fail "$t: launched under an unauthenticated journal"
+[ -f "$ws/.cursor/user-file" ] || fail "$t: unrelated .cursor directory was removed"
+[ -f "$lure/keep" ] || fail "$t: same-pattern temp path was removed"
+[ -e "$txn" ] || fail "$t: unauthenticated journal must be left untouched"
+rm -rf "$lure"
+pass "$t unauthenticated journal cannot direct removals"
+
+# --- test 13: setup failure + failed rollback retains the journal ----------
+# Injected: install of the second policy file fails after the first is
+# installed, then restoration of the first fails; the runner must report the
+# rollback failure and keep the journal/backup instead of deleting them.
+t=t13
+ws="$TMP/$t"; mkdir -p "$ws/.cursor" || exit 1
+printf 'rollback original\n' > "$ws/.cursor/cli.json"
+rc=0
+FAKE_CP_FAIL=1 FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
+  -- -p "x" > /dev/null 2> "$TMP/$t.err" || rc=$?
+[ "$rc" -eq 70 ] || fail "$t: exit $rc (want 70 = cleanup failure)"
+[ ! -e "$ws/launched" ] || fail "$t: launched despite setup failure"
+[ -f "$ws/.cursor-profile-txn/backup/cli.json" ] || fail "$t: backup not retained after failed rollback"
+[ -f "$ws/.cursor-profile-txn/manifest" ] || fail "$t: manifest not retained after failed rollback"
+grep -q "rollback also failed" "$TMP/$t.err" || fail "$t: rollback failure not reported"
+pass "$t failed rollback reported, journal and backup retained"
 
 # ---------------------------------------------------------------------------
 if [ "$failures" -gt 0 ]; then
