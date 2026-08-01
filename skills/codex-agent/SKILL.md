@@ -9,9 +9,9 @@ Run `codex exec` from the intended workspace, give it a bounded outcome, monitor
 it at the task's time scale, and preserve its session ID when follow-up work is
 likely.
 
-Treat explicit invocation as authorization to run Codex CLI for the requested
-task. Do not extend that authorization to pushes, merges, destructive actions,
-unrelated edits, broader access, or other external side effects.
+Doctrine — authorization scope, least authority, prompt discipline, session
+and verification rules — lives in `/cross-provider-agent`. This skill is the
+Codex transport.
 
 ## Check the CLI and authentication
 
@@ -46,10 +46,6 @@ Use workspace write access only when the user's task authorizes implementation:
 codex exec --json --sandbox workspace-write -C /absolute/path/to/repo \
   "Act as an independent worker for the current task. Implement TASK within SCOPE, verify it, do not push or modify unrelated files, do not spawn more agents, and report changed files and checks."
 ```
-
-Give the worker the objective, permitted files and side effects, required
-verification, and desired response shape. For review-only work, explicitly
-prohibit edits. Do not send secrets or unrelated parent-thread context.
 
 Use `--output-schema` when downstream automation requires stable structured
 output. Use `--output-last-message` when a separate final-result file is useful;
@@ -91,10 +87,6 @@ Prefer an explicit ID. Use `--last` only when the user explicitly requests the
 most recent session and its identity is unambiguous. If the original workspace
 is unknown, do not authorize edits until the target checkout is resolved.
 
-Tell a resumed worker that the current objective and scope supersede stale task
-assumptions from its prior transcript. Never resume the same session
-concurrently; competing turns can corrupt the intended workflow.
-
 When a user calls this "adoption," preserve the boundary:
 
 - This continues an external Codex CLI session; it does not re-parent it.
@@ -104,33 +96,53 @@ When a user calls this "adoption," preserve the boundary:
 
 ## Monitor and collect
 
-Keep long-running CLI work attached and inspect new output at intervals
-appropriate to the task. Do not restart a quiet process. Surface failures or
-approval needs promptly.
-
 With `--json`, require a successful process exit and a terminal
 `turn.completed` event. Treat `turn.failed`, `error`, a nonzero exit, or a
 mismatched thread ID as failure. The final `item.completed` whose item type is
 `agent_message` contains the worker's result.
 
-When a required CLI call fails because the surrounding sandbox blocks network
-access, retry the same scoped command using the environment's approval or
-network-escalation mechanism. Do not misreport a DNS or sandbox denial as an
-authentication failure.
+`codex exec` hardcodes never-ask approvals: a sandboxed command that needs
+network fails (on Linux, a bubblewrap loopback error) with no runtime
+escalation path. Pre-authorize the specific commands with execpolicy rules —
+see profiled dispatch below — instead of widening the sandbox.
 
 Use the least authority that completes the task. Never add
 `--dangerously-bypass-approvals-and-sandbox`, `danger-full-access`,
 `--ignore-rules`, or `--dangerously-bypass-hook-trust` merely to make a run
 unattended.
 
-## Verify and hand off
+## Profiled dispatch: github-pr-reviewer
 
-Treat the worker's response like any external agent result:
+`profiles/github-pr-reviewer/` encodes the profile from
+`/cross-provider-agent` as an agent config layer (`reviewer.toml`) plus a
+sibling `rules/` directory. The execpolicy rules allow exactly the profile's
+`gh` surface to run outside the read-only sandbox; local reads need no rules
+because they run inside it.
 
-1. Inspect relevant files or the Git diff independently.
-2. Run task-appropriate checks when edits occurred.
-3. Reconcile its result with the current task instead of forwarding it blindly.
-4. Report the outcome, verification, and session ID.
+Load the profile for one invocation by absolute path — the workspace stays
+untouched:
 
-Use the same session ID for later refinements that depend on its history. Start
-a fresh session when the repository, task, or trust boundary changes.
+```bash
+codex exec --json --sandbox read-only -C /absolute/path/to/workspace \
+  -c 'agents.github_pr_reviewer.description="Profiled PR reviewer."' \
+  -c 'agents.github_pr_reviewer.config_file="/absolute/path/to/codex-agent/profiles/github-pr-reviewer/reviewer.toml"' \
+  "Spawn one fresh github_pr_reviewer child (no full-history fork) for REVIEW_TASK, wait for it, and relay its result verbatim."
+```
+
+The child must be a fresh spawn; a full-history fork rejects `agent_type`.
+Role binding has an open reliability bug (openai/codex#32587) that fails
+closed here: a child without the role gets no rules, hence no network escape.
+This dispatch nests a parent CLI agent around the child, roughly doubling
+token cost — the price of leaving the workspace untouched.
+
+Verify a rule offline before relying on it:
+
+```bash
+codex execpolicy check \
+  --rules /absolute/path/to/codex-agent/profiles/github-pr-reviewer/rules/github-pr-reviewer.rules \
+  -- gh pr comment 1 --body test
+```
+
+Rules are experimental. Keep only narrow `allow` prefixes and never add a
+fallback rule: most-restrictive-wins would turn a broad `prompt` decision
+into a blocker under exec's never-ask approvals.

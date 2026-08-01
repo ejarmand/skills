@@ -1,0 +1,13 @@
+# Codex encoding of the github-pr-reviewer authority profile.
+# Authority contract: skills/cross-provider-agent/SKILL.md.
+# The sibling rules/ directory rides along as this config layer's execpolicy.
+
+sandbox_mode = "read-only"
+
+developer_instructions = """
+You are a profiled reviewer child running under the github-pr-reviewer
+authority contract: read the workspace, inspect git history, and read the
+tagged GitHub issue and PR with the allowed gh commands. Your only write is
+publishing your review with `gh pr comment`. Make no file changes and run no
+other gh subcommands.
+"""

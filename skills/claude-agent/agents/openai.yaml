@@ -1,0 +1,4 @@
+interface:
+  display_name: "Claude Agent"
+  short_description: "Run and resume headless Claude Code workers"
+  default_prompt: "Use $claude-agent to delegate this task through headless Claude Code and preserve the session ID for follow-up work."
