@@ -23,7 +23,7 @@ The route most work travels. You have an idea and want it built.
    - **Yes** → **`/to-spec`** (turn the thread into a spec), then **`/to-tickets`** to split it into tracer-bullet tickets, each declaring its **blocking edges**. On a local tracker that's one file per ticket under `.scratch/<feature>/issues/`, worked blockers-first by hand; on a real tracker the edges become native blocking links, so any ticket whose blockers are done can be grabbed — kick off **`/implement`** per ticket, **clearing context between each one**.
    - **No** → **`/implement`** right here, in the same context window.
 
-   Either way, **`/implement`** builds each issue by driving **`/tdd`** internally — one red-green slice at a time — then runs focused checks and closes out with **`/code-review`**, a two-axis review (Standards + Spec), before full checks and commit. Reach for **`/tdd`** on its own when you just want to build a concrete behaviour test-first, and **`/code-review`** whenever you want to review a branch or PR against a fixed point.
+   Either way, **`/implement`** builds each issue by driving **`/tdd`** internally — one red-green slice at a time, written against the unified standard — then runs focused and full checks before commit. Reach for **`/tdd`** on its own when you just want to build a concrete behaviour test-first, and **`/code-review`** whenever you want to review a branch or PR against a fixed point.
 
 ### Context hygiene
 
@@ -75,8 +75,6 @@ Two model-invoked references that run *beneath* the other skills — each the si
 - **`/pr-ping-pong`** — rally an issue or PR between one continuing
   implementer and independent cross-provider reviewers until it passes or the
   rally budget is exhausted.
-- **`/cross-provider-review`** — run one provider-neutral, single-shot review
-  against a fixed base/head pair and publish it.
 - **`/cross-provider-agent`** — the dispatch primitive: one bounded task on
   an external-provider agent under least authority, with named authority
   profiles (e.g. `github-pr-reviewer`). Owns the shared doctrine.
