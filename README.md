@@ -39,8 +39,11 @@ maps the complete collection.
 
 ### Agent and review orchestration
 
+- `claude-agent` — execute and resume independent headless Claude Code work
 - `codex-agent` — execute and resume independent Codex CLI work
 - `cursor-agent` — execute and resume independent Cursor Agent work
+- `cross-provider-agent` — dispatch one bounded task to an external provider
+  under least authority, with named authority profiles
 - `cross-provider-review` — run and publish one independent review
 - `pr-ping-pong` — rally implementation against cross-provider reviewers
 
@@ -71,8 +74,8 @@ test uses temporary destinations and does not mutate a developer's installed
 skills:
 
 ```bash
-scripts/test-inventory.sh
-scripts/test-link-skills.sh
+tests/test-inventory.sh
+tests/test-link-skills.sh
 ```
 
 ## Provenance

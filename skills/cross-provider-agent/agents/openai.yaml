@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cross-Provider Agent"
+  short_description: "Dispatch a bounded task to an external-provider agent"
+  default_prompt: "Use $cross-provider-agent to dispatch this task to an independent provider agent under least authority, then monitor and verify the result."

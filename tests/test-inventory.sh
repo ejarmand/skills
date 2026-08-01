@@ -40,6 +40,16 @@ for skill_dir in "$REPO"/skills/*; do
     exit 1
   fi
 
+  skill_yaml="$skill_dir/agents/openai.yaml"
+  dmi=0
+  if grep -q '^disable-model-invocation: true' "$skill_md"; then dmi=1; fi
+  aii=0
+  if [ -f "$skill_yaml" ] && grep -q 'allow_implicit_invocation: false' "$skill_yaml"; then aii=1; fi
+  if [ "$dmi" != "$aii" ]; then
+    echo "error: $dir_name invocation flags disagree: SKILL.md disable-model-invocation=$dmi but openai.yaml allow_implicit_invocation:false=$aii." >&2
+    exit 1
+  fi
+
   count=$((count + 1))
 done
 

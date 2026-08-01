@@ -1,13 +1,13 @@
 ---
 name: cursor-agent
-description: Run Cursor Agent CLI as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to Cursor, get a second model pass, automate cursor-agent in headless mode, capture a Cursor session ID, or resume and continue an earlier Cursor chat.
+description: Run Cursor Agent CLI as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to Cursor, automate cursor-agent in headless mode, capture a Cursor session ID, or resume and continue an earlier Cursor chat.
 ---
 
 # Cursor Agent
 
 Run `cursor-agent` from the intended workspace, give it a concrete outcome, monitor it at the task's time scale, and preserve its session ID whenever follow-up work is likely.
 
-Treat explicit invocation of this skill — directly by the user or by a skill the user invoked — as authorization to use Cursor Agent to complete the requested task, including allowing Cursor Agent to read the necessary local files in the intended workspace. Do not extend that authorization to unrelated tasks, broader filesystem access, or destructive or external actions not otherwise authorized.
+Read `/cross-provider-agent` first and apply its doctrine to the whole dispatch; this skill is only the Cursor transport.
 
 ## Check the CLI and authentication
 
@@ -20,8 +20,6 @@ cursor-agent status --format json
 ```
 
 If authentication is missing, ask the user to run `cursor-agent login`, or use `CURSOR_API_KEY` when the user has already arranged it. Never print or embed an API key in a command.
-
-Use `cursor-agent models` (or `cursor-agent --list-models`) when the user requests a particular model. Otherwise omit `--model` and use the account default rather than hard-coding a model name.
 
 ## Choose the execution mode
 
@@ -52,8 +50,6 @@ Use the least authority suitable for the task:
 - Add `--force` only when the user authorized changes and unattended command execution is necessary.
 - Use `--sandbox enabled` when the task can run within Cursor's sandbox.
 
-State constraints directly in the prompt: permitted edits, required checks, expected output, and forbidden side effects. For review-only work, explicitly prohibit edits, pushes, merges, and unrelated external actions.
-
 ## Capture the session ID
 
 Do not rely on "latest session" when later continuation matters. Return the ID to the caller and persist it in the caller's chosen task state.
@@ -82,8 +78,6 @@ cursor_chat_id="$(printf '%s\n' "$cursor_run_json" | jq -er '.session_id')"
 printf '%s\n' "$cursor_run_json" | jq -r '.result'
 ```
 
-Only parse the response after confirming that `cursor-agent` exited successfully. The final JSON object contains `session_id`.
-
 ### Capture an ID from a streamed run
 
 Use NDJSON when progress must remain visible:
@@ -100,7 +94,7 @@ cursor_chat_id="$(jq -ser \
   "$cursor_run_log")"
 ```
 
-The initialization event emits `session_id` near the start, and the terminal result event repeats it after success. Treat the NDJSON log as potentially sensitive because it can contain prompts, file contents, and tool arguments.
+The initialization event emits `session_id` near the start, and the terminal result event repeats it after success.
 
 ## Resume a session
 
@@ -123,11 +117,9 @@ cursor-agent resume
 
 Use `cursor-agent -p --continue "FOLLOW_UP"` only when continuing the most recent session is unambiguous. Prefer `--resume="$cursor_chat_id"` for automation.
 
-Keep using the same session for refinements that depend on prior context. Start a new chat when the task, repository, or trust boundary changes.
-
 ## Monitor and verify
 
-Run a long invocation in the background and poll its output (or the NDJSON log) at intervals appropriate to the task; do not restart it merely because it is quiet. Check at least often enough to surface approval prompts or failures promptly. When running from an interactive terminal instead, keep the invocation attached and inspect new output on the same cadence.
+Run a long invocation in the background and poll the NDJSON log often enough to surface approval prompts promptly.
 
 On completion:
 
@@ -136,6 +128,19 @@ On completion:
 3. Run task-appropriate tests or checks if Cursor did not already do so.
 4. Report the outcome, verification, and session ID.
 
-### Sandbox and network failures
+A `cursor-agent` or `gh` failure with transport errors naming the URL is the sandbox denying network, not bad credentials (`/cross-provider-agent` doctrine); rerun with the environment's required network escalation.
 
-Distinguish an auth failure from a network-denied sandbox before reporting one as the other. When a `cursor-agent` (or `gh`) command fails because sandbox networking is unavailable, rerun it with the environment's required network escalation rather than treating the failure as bad credentials.
+## Profiled dispatch: github-pr-reviewer
+
+Cursor takes permission and sandbox policy only from configuration files, so profiled dispatch runs through the skill's transactional runner, which stages the profile for exactly one invocation and restores the workspace byte-for-byte:
+
+```bash
+/absolute/path/to/cursor-agent/scripts/run-profiled.sh \
+  --workspace /absolute/path/to/workspace \
+  --profile github-pr-reviewer \
+  -- -p --output-format json --trust "REVIEW_TASK"
+```
+
+The runner stages the profile under an isolated `CURSOR_CONFIG_DIR` and workspace `.cursor/` snapshot, supervises the child, and restores everything byte-for-byte (mechanics in the script header). Setup failure prevents launch; cleanup failure is failure even when the child succeeded; a workspace lock rejects concurrent runners, so parallel dispatches need separate workspaces; after an untrappable crash, the next invocation recovers the stale transaction.
+
+Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the profile's allowlist is the whole command surface; the runner allowlists child arguments — `-p`/`--print`, `--trust`, `--output-format`, `--model`, and the prompt — and rejects everything else. `cli.json` is the profile's canonical permissions object — the runner derives the global config Cursor needs from it at stage time. The profile pairs multi-word `Shell(...)` allows — live-verified but undocumented — with a `sandbox.json` GitHub-only network allowlist as defense in depth.

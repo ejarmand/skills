@@ -77,10 +77,12 @@ Two model-invoked references that run *beneath* the other skills — each the si
   rally budget is exhausted.
 - **`/cross-provider-review`** — run one provider-neutral, single-shot review
   against a fixed base/head pair and publish it.
-- **`/codex-agent`** and **`/cursor-agent`** — adapters over the external agent
-  CLIs. They own authentication preflight, authority selection, session
-  capture/resume, terminal success, and result verification; orchestration
-  skills invoke them instead of copying their CLI doctrine.
+- **`/cross-provider-agent`** — the dispatch primitive: one bounded task on
+  an external-provider agent under least authority, with named authority
+  profiles (e.g. `github-pr-reviewer`). Owns the shared doctrine.
+- **`/claude-agent`**, **`/codex-agent`**, and **`/cursor-agent`** — transport
+  adapters over the external agent CLIs: invocation forms, session
+  capture/resume, and profile encodings.
 
 ## Standalone
 

@@ -1,0 +1,26 @@
+# Codex execpolicy for github-pr-reviewer: the only commands that may run
+# outside the read-only sandbox. `allow` runs the matched command unsandboxed,
+# so keep every prefix narrow. Local reads (rg, head, git) need no rules —
+# they run inside the sandbox.
+#
+# No fallback rules: Codex applies the most restrictive matching decision,
+# so a broad `prompt` rule would block these allows under exec's never-ask
+# approval policy.
+
+prefix_rule(
+    pattern = ["gh", ["issue", "pr"], "view"],
+    decision = "allow",
+    justification = "reviewer reads issue/PR state",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "diff"],
+    decision = "allow",
+    justification = "reviewer reads the PR diff",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "comment"],
+    decision = "allow",
+    justification = "reviewer publishes its review as a top-level PR comment",
+)

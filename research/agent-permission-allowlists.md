@@ -260,10 +260,11 @@ sound and mechanically checkable.
   `--auto-review`-stall claims were not re-verified here (no live `-p` run was made).
 - **Issue #14 addendum wording** — "per-subagent command allowlist (e.g. allow
   `gh issue view` / `gh pr view`, `rg`, `head`; deny writes and everything else)" is
-  fully expressible in Codex (rules) and Claude Code (permission rules), but **not in
-  Cursor at subcommand granularity**; Cursor gets binary-level + domain-level only.
-  Also note the allowlist doesn't need to cover `rg`/`head` on Codex at all — those
-  run inside the read-only sandbox; only the network-touching `gh` reads need rules.
+  fully expressible in all three CLIs. (This bullet originally said "not in Cursor at
+  subcommand granularity", per the docs; superseded by the §6 live tests showing
+  multi-word `Shell(...)` rules do match.) Also note the allowlist doesn't need to
+  cover `rg`/`head` on Codex at all — those run inside the read-only sandbox; only
+  the network-touching `gh` reads need rules.
 - **Stability caveat for cross-provider-agent doctrine:** Codex rules are explicitly
   experimental with open matching bugs (#15298, #13175); any adapter text should say
   "verify with `codex execpolicy check`" rather than trusting the rule file blindly.
@@ -318,3 +319,59 @@ practice, but trust also cannot be relied on as a *blocker* against a hostile re
 `.codex/rules/` — another reason dispatch worktrees should be coordinator-created.
 (The machine used Codex's bundled bubblewrap — `bwrap` not on PATH — and enforcement
 still held.)
+
+### CLI-passability, corrected: Cursor file-only; Codex flag-passable after all
+
+An earlier revision of this note claimed neither external CLI can take the permission
+config via flags. Half right. Cursor: confirmed — the full `cursor-agent --help`
+(88 lines, 2026-08-01) has no allow/deny/permission/profile flag (`--force`,
+`--trust`, `--sandbox enabled|disabled`, `--mode`, `--plugin-dir` are the whole
+surface); staging `.cursor/cli.json` + `.cursor/sandbox.json` is the only
+per-dispatch path. Codex: **wrong** — as found in
+[`subagent-profile-portability.md`](./subagent-profile-portability.md),
+`codex exec -c 'agents.<role>.config_file="/abs/path/reviewer.toml"'` loads the agent
+TOML as a config layer, and since Codex scans `rules/` under every active config
+layer, a `rules/` directory sibling to that TOML rides along — no worktree or global
+mutation. Independently reproduced here (0.146.0, 2026-08-01): fresh workdir with no
+`.codex/` anywhere, profile passed only via the two `-c` flags, parent instructed to
+spawn one fresh `reviewer` child; the child ran
+`gh issue view 14 --repo ejarmand/skills --json title` through the read-only sandbox
+and returned the real title. Trade-offs vs the project-layer file drop: no
+`codex exec --agent` flag exists, so a parent agent must spawn the child and relay
+its result (~17.4k tokens vs ~7.2k for the direct-rules run of the same read), the
+child must be a fresh spawn (a full-history fork rejects `agent_type`), and role
+binding has an open reliability bug
+([openai/codex#32587](https://github.com/openai/codex/issues/32587)) — though a
+failed binding fails *closed* here (child without the role gets no rules, hence no
+network escape). Both Codex mechanisms are now live-verified; choose per dispatch:
+project-layer drop for the simple, adapter-symmetric recipe; `config_file` when the
+worktree must stay untouched.
+
+## 7. Addendum 2026-08-01: Codex native file writes bypass the read-only sandbox
+
+Found by the `github-pr-reviewer` live conformance probes
+(`tests/conformance-profiles.sh`, codex-cli 0.146.0, Linux):
+
+- Profiled dispatch (`--sandbox read-only` + agent config layer): an instructed
+  file creation in the workspace **succeeded** — the conformance canary caught
+  `conformance-denied.txt` and a dirty tree.
+- Plain `codex exec --sandbox read-only` with no agent layer: `apply_patch`
+  created the file after a syntax retry — the bypass is provider-level, not
+  introduced by the agent config layer.
+- `-c features.apply_patch_freeform=false` did not remove the capability; the
+  model fell back to "a direct exact-byte write" and the file landed.
+- No kill switch found in the 0.146.0 schema: the `tools` section toggles only
+  `experimental_request_user_input`/`update_plan`/`web_search`, and
+  `AgentRoleToml` carries only `config_file`/`description`/`nickname_candidates`.
+- Shell writes remain sandbox-governed (on this machine every sandboxed shell
+  command fails at bwrap loopback setup — the §6 error shape — so shell
+  enforcement could not be distinguished from environment failure here).
+- `gh search issues` on openai/codex found no existing report; worth filing.
+
+Consequence: on Codex, the profile's "forbids filesystem writes" is currently
+**detect-and-reject, not prevent**. The coordinator's post-dispatch check —
+pinned head, clean tree, discard the review otherwise — is the operative
+guard, now stated in cross-provider-agent's dispatch step. A chmod-based
+transactional wrapper (drop user-write bits before dispatch, restore after)
+would convert native writes into EACCES failures and is the hardening path if
+upstream does not fix; shell `chmod +w` escape attempts stay sandbox-blocked.
