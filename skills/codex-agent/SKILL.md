@@ -21,7 +21,6 @@ codex login status
 If authentication is missing, ask the user to run `codex login`. Never display,
 copy, or embed authentication files or tokens.
 
-
 ## Start a worker
 
 Resolve the intended working directory and whether the task may edit files.

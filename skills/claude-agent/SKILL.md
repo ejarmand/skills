@@ -23,6 +23,7 @@ interactively and `/login`. Never display, copy, or embed authentication
 files or tokens.
 
 ## Start a worker
+
 Run from the intended workspace directory — the working directory is the
 workspace.
 
@@ -33,7 +34,7 @@ cd /absolute/path/to/workspace && claude -p --output-format json \
 ```
 
 For authorized implementation, drop `--permission-mode plan` and grant the
-task's specific needs with `--allowedTools`. 
+task's specific needs with `--allowedTools`.
 
 ## Capture the session ID
 
@@ -47,14 +48,14 @@ claude -p --output-format json --session-id "$claude_session_id" \
 ```
 
 With `--output-format json`, the terminal result object
-carries `session_id`, `result`, and `is_error`. 
+carries `session_id`, `result`, and `is_error`.
 
 ## Resume a session
 
 With the flag:
 
 ```bash
- --resume "$claude_session_id" 
+--resume "$claude_session_id"
 ```
 
 Use `--continue` only when continuing the most recent conversation is
@@ -83,5 +84,5 @@ pre-existing configuration cannot widen the child's effective authority.
 
 Run a long invocation in the background and inspect its output at intervals
 appropriate to the task. On completion require a zero exit status and
-`"is_error": false` in the result object; treat a nonzero exit, an error
-result. The `result` field contains the worker's response.
+`"is_error": false` in the result object; treat a nonzero exit or an error
+result as failure. The `result` field contains the worker's response.

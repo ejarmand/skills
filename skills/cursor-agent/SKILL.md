@@ -7,8 +7,6 @@ description: Run Cursor Agent CLI as an independent coding agent for implementat
 
 Run `cursor-agent` from the intended workspace, give it a concrete outcome, monitor it at the task's time scale, and preserve its session ID whenever follow-up work is likely.
 
-Doctrine — authorization scope, least authority, prompt discipline, session and verification rules — lives in `/cross-provider-agent`. This skill is the Cursor transport.
-
 ## Check the CLI and authentication
 
 Treat the installed CLI help as authoritative because Cursor Agent is evolving:
@@ -20,8 +18,6 @@ cursor-agent status --format json
 ```
 
 If authentication is missing, ask the user to run `cursor-agent login`, or use `CURSOR_API_KEY` when the user has already arranged it. Never print or embed an API key in a command.
-
-Use `cursor-agent models` (or `cursor-agent --list-models`) when the user requests a particular model. Otherwise omit `--model` and use the account default rather than hard-coding a model name.
 
 ## Choose the execution mode
 
@@ -80,8 +76,6 @@ cursor_chat_id="$(printf '%s\n' "$cursor_run_json" | jq -er '.session_id')"
 printf '%s\n' "$cursor_run_json" | jq -r '.result'
 ```
 
-Only parse the response after confirming that `cursor-agent` exited successfully. The final JSON object contains `session_id`.
-
 ### Capture an ID from a streamed run
 
 Use NDJSON when progress must remain visible:
@@ -98,7 +92,7 @@ cursor_chat_id="$(jq -ser \
   "$cursor_run_log")"
 ```
 
-The initialization event emits `session_id` near the start, and the terminal result event repeats it after success. Treat the NDJSON log as potentially sensitive because it can contain prompts, file contents, and tool arguments.
+The initialization event emits `session_id` near the start, and the terminal result event repeats it after success.
 
 ## Resume a session
 
@@ -145,6 +139,6 @@ Cursor takes permission and sandbox policy only from configuration files, so pro
   -- -p --output-format json --trust "REVIEW_TASK"
 ```
 
-The runner points `CURSOR_CONFIG_DIR` at a private temporary directory, snapshots any pre-existing workspace `.cursor/cli.json` and `.cursor/sandbox.json`, atomically installs the profile's copies, supervises `cursor-agent` (forwarding output, exit status, and INT/TERM/HUP), then restores the originals exactly and removes everything it created. Setup failure prevents launch; cleanup failure is reported as failure even when the child succeeded; a workspace-scoped lock rejects concurrent runners — parallel dispatches need separate workspaces. After an untrappable crash (SIGKILL, power loss), the next invocation recovers the stale transaction from its journal before proceeding.
+The runner stages the profile under an isolated `CURSOR_CONFIG_DIR` and workspace `.cursor/` snapshot, supervises the child, and restores everything byte-for-byte (mechanics in the script header). Setup failure prevents launch; cleanup failure is failure even when the child succeeded; a workspace lock rejects concurrent runners, so parallel dispatches need separate workspaces; after an untrappable crash, the next invocation recovers the stale transaction.
 
 Run profiled dispatches with plain `-p --trust` (deny-unless-allowed) and never `--force`, so the profile's allowlist is the whole command surface. The profile pairs multi-word `Shell(...)` allows — live-verified but undocumented — with a `sandbox.json` GitHub-only network allowlist as defense in depth.

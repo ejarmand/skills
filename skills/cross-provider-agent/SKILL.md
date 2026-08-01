@@ -86,5 +86,4 @@ destinations beyond GitHub; sandbox or approval bypasses.
    output and session ID, and removes any configuration it staged.
 3. Verify per doctrine. When the caller pinned the workspace to a head,
    confirm after the child exits that the workspace still points at it with a
-   clean tree, and discard the child's output when it does not — enforcement
-   gaps in a provider must not become accepted results.
+   clean tree, and discard the child's output when it does not.
