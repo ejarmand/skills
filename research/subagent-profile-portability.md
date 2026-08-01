@@ -6,6 +6,8 @@
 > [issue #14 point 5](https://github.com/ejarmand/skills/issues/14#issuecomment-5147950617).
 > The resulting implementation outline was posted back to
 > [issue #14](https://github.com/ejarmand/skills/issues/14#issuecomment-5149791026).
+> The parent-owned-workspace refinement and buildable implementation contract
+> are captured in [issue #15](https://github.com/ejarmand/skills/issues/15).
 >
 > Current local versions: Codex CLI 0.146.0 and Cursor CLI
 > 2026.07.23-e383d2b. Sources are first-party documentation, first-party source,
@@ -34,9 +36,11 @@ sandbox escape was `gh issue view`. The child must be a fresh/no-history spawn.
 Cursor can discover custom agents and Cursor plugins can package them, but its
 CLI has no `--agent`, `--agents`, or arbitrary profile-file flag. Its command
 permissions and network sandbox remain workspace/user configuration rather than
-fields in a custom-agent file. The adapter therefore needs to stage scoped
-`.cursor/cli.json` and `.cursor/sandbox.json` configuration (or use an already
-installed plugin/profile) for the dispatch.
+fields in a custom-agent file. The adapter should therefore launch with an
+isolated `CURSOR_CONFIG_DIR` and stage scoped `.cursor/cli.json` and
+`.cursor/sandbox.json` files in the caller-provided workspace (or use an
+already installed plugin/profile). Preparing and disposing of a review
+worktree remains the parent coordinator's responsibility.
 
 Claude Code is the clearest reference design: it supports plugin-provided agents,
 session-only `--agents` JSON, and `--agent <name>`. It demonstrates that all three
@@ -173,6 +177,60 @@ The multi-word `Shell(...)` behavior is live-tested but undocumented, so keep
 the domain allowlist as defense in depth. See the companion
 [`agent-permission-allowlists.md`](./agent-permission-allowlists.md#6-addendum-2026-08-01-live-end-to-end-permission-tests).
 
+#### Skill-owned transactional wrapper
+
+This can be packaged directly in a skill. Codex skills may contain optional
+executable `scripts/`, and OpenAI recommends scripts when deterministic
+behavior or external tooling is required. Script presence is not an automatic
+launch hook: `SKILL.md` must instruct Codex to run the wrapper, and the call
+remains subject to the host sandbox and approval policy.
+
+The wrapper contract begins with a workspace already prepared by its parent:
+
+1. accept and validate the caller-provided workspace and selected authority
+   profile;
+2. create temporary config and backup directories;
+3. set `CURSOR_CONFIG_DIR` to the temporary directory containing the profile's
+   `cli-config.json`;
+4. snapshot the existence, exact bytes, and modes of the workspace's
+   `.cursor/cli.json` and `.cursor/sandbox.json`, then atomically install the
+   profile's project policy files;
+5. run `cursor-agent` as a supervised child and preserve its exit status; and
+6. restore the workspace files exactly and remove the temporary directories
+   after the child exits.
+
+The wrapper does not create, fetch, check out, pin, or remove a review worktree.
+Those remain parent-coordinator responsibilities. This avoids mutating the
+user's global Cursor configuration. Concurrent dispatches must receive
+different parent-provided workspaces; a workspace lock prevents accidental
+same-workspace overlap. The wrapper uses `EXIT`/signal traps that restore or
+remove only files it owns. It must not `exec cursor-agent`, because replacing
+the shell would prevent its exit trap from performing cleanup. Signal cleanup
+cannot cover `SIGKILL` or a machine crash, so the wrapper also needs a recovery
+journal on the next invocation.
+
+A live probe against Cursor CLI 2026.07.23-e383d2b established the configuration
+lifetime:
+
+- the initial project policy allowed `Shell(sleep)` and
+  `Shell(git status)`;
+- one invocation was instructed to run `sleep 30`, then `git status --short`;
+- while `sleep` was active, `Shell(git status)` was added to the deny list;
+- the active invocation still ran `git status --short`; and
+- a new invocation immediately read the changed file and blocked the same
+  command with `Permission denied: Command blocked by permissions
+  configuration`.
+
+Therefore permissions are snapshotted for an invocation in this build and
+reloaded at the next launch. The wrapper should still keep the scoped files in
+place for the entire child-process lifetime, including any subagent dispatches,
+then clean up only after the process tree is finished.
+
+Sources: [OpenAI build skills](https://learn.chatgpt.com/docs/build-skills),
+[Cursor CLI configuration](https://cursor.com/docs/cli/reference/configuration),
+[Cursor CLI permissions](https://cursor.com/docs/cli/reference/permissions),
+and [Cursor sandbox reference](https://cursor.com/docs/reference/sandbox).
+
 ### Claude Code reference
 
 Claude Code accepts an ephemeral JSON map with `--agents` and can select the
@@ -257,9 +315,11 @@ prompt wording or config parsing alone.
 - [Point 5 clarification](https://github.com/ejarmand/skills/issues/14#issuecomment-5147947457)
 - [Point 5 command-allowlist addendum](https://github.com/ejarmand/skills/issues/14#issuecomment-5147950617)
 - [Resulting implementation outline](https://github.com/ejarmand/skills/issues/14#issuecomment-5149791026)
+- [Agent-ready implementation spec #15](https://github.com/ejarmand/skills/issues/15)
 
 ### OpenAI Codex
 
+- [Build skills](https://learn.chatgpt.com/docs/build-skills)
 - [Subagents and custom agents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 - [Configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 - [Advanced configuration profiles](https://learn.chatgpt.com/docs/config-file/config-advanced#profiles)
@@ -276,6 +336,7 @@ prompt wording or config parsing alone.
 
 - [Subagents](https://cursor.com/docs/subagents)
 - [CLI overview](https://cursor.com/docs/cli/overview)
+- [CLI configuration](https://cursor.com/docs/cli/reference/configuration)
 - [CLI permissions](https://cursor.com/docs/cli/reference/permissions)
 - [Sandbox reference](https://cursor.com/docs/reference/sandbox)
 - [Cursor 2.4: subagents and skills](https://cursor.com/changelog/2-4)
