@@ -7,7 +7,7 @@ Interview me relentlessly about every aspect of this until we reach a shared und
 
 Before asking a question provide me a content summary of decision-relevant data. Keep that reference material in the message body, separate from the question itself.
 
-Ask the questions one at a time, waiting for feedback on each question before continuing. Asking multiple questions at once is bewildering. Give each question exactly one concern — a question that entangles separate decisions is as bewildering as several questions at once. Make each question self-contained: restate its context in the question text itself rather than pointing at labels or analysis from earlier prose.
+Give each question exactly one concern.
 
 If a *fact* can be found by exploring the environment (filesystem, tools, etc.), look it up rather than asking me. The *decisions*, though, are mine — put each one to me and wait for my answer.
 
