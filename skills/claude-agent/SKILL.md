@@ -77,11 +77,19 @@ and explicit denies for the nearby writes.
 cd /absolute/path/to/workspace && claude -p --output-format json \
   --settings /absolute/path/to/claude-agent/profiles/github-pr-reviewer/settings.json \
   --setting-sources "" \
+  --plugin-dir /absolute/path/to/skills-repo \
   "REVIEW_TASK"
 ```
 
 `--setting-sources ""` loads no user, project, or local settings layer, so
-pre-existing configuration cannot widen the child's effective authority.
+pre-existing configuration cannot widen the child's effective authority. It
+also unloads installed skills, so this repo's skills travel explicitly:
+`--plugin-dir` loads the skills repository root, whose `.claude-plugin/`
+manifest packages `skills/` as the `skills-repo` plugin — always the repo
+that provides this adapter, never the workspace under review. Cite skills in
+the dispatch prompt by their namespaced name — the review contract is
+`skills-repo:code-review`; the bare name resolves to Claude's bundled
+code-review, which rejects model invocation.
 
 ## Monitor and verify
 
