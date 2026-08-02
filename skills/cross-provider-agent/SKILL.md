@@ -1,20 +1,13 @@
 ---
 name: cross-provider-agent
-description: Dispatch one bounded task to an external-provider coding agent (Claude, Codex, or Cursor CLI) under least authority, then monitor and verify the result. Use when work needs an independent provider's pass, when a task should run under a named authority profile, or when another skill needs an external subagent.
+description: Dispatch a bounded task to a Claude, Codex, or Cursor CLI agent with least authority. Use for independent reviews, named authority profiles, or external-provider subagents.
 ---
 
 # Cross-Provider Agent
 
-The dispatch primitive: run one external-provider subagent for one bounded
-task. This skill owns the doctrine, the backend choice, and the authority
-profiles. The adapters — `/claude-agent`, `/codex-agent`, `/cursor-agent` —
-own their CLI transport: authentication, invocation forms, session capture,
-resume syntax, and provider quirks.
-
-## common failuress: 
-**Sandbox denial is not auth failure.** Transport errors (`dial`, `lookup`,
-`connect`, loopback failures) mean the sandbox denied network; an HTTP 401
-"Bad credentials" body means auth. Diagnose before reporting either.
+Choose the backend and authority profile here. Delegate authentication,
+invocation, sessions, monitoring, and provider quirks to `/claude-agent`,
+`/codex-agent`, or `/cursor-agent`.
 
 ## Choose the backend
 
@@ -25,24 +18,22 @@ resume syntax, and provider quirks.
 
 ## Authority profiles
 
-A profile is a named, provider-neutral authority contract. Each adapter
-encodes it under `profiles/<name>/` beside its SKILL.md and owns applying it
-for exactly one invocation of one fresh child. Profiles carry authority only.
+Profiles are provider-neutral authority contracts applied by adapters to one
+fresh child. Adapter encodings live under `profiles/<name>/` beside each
+adapter's SKILL.md.
 
 ### Profile index
 
-- `github-pr-reviewer` — reviews a GitHub PR or issue implementation from a
-  caller-prepared checkout and publishes its own review. When it is selected,
-  read and enforce [profiles/github-pr-reviewer.md](profiles/github-pr-reviewer.md)
+- [`github-pr-reviewer`](profiles/github-pr-reviewer.md) — read and enforce
   before choosing an adapter.
 
-## Dispatch requires:
+## Workspace ownership
 
-1. Require from the caller: an absolute path to a prepared workspace, the
-   task prompt, and any profile and backend selection. The caller owns
-   workspace lifecycle — creating, pinning, verifying, and deleting
-   checkouts never happens here or in an adapter.
-2. Fail closed when the workspace contains `.codex/` or `.cursor/`:
-   workspace-resident provider config loads into the child's policy with no
-   trust gate, letting the work under review grant its own reviewer
-   authority. (Claude is immune) 
+Require an absolute path to a caller-prepared workspace. The caller owns
+checkout creation, pinning, verification, and deletion.
+
+## Distinguish network denial from authentication failure
+
+Transport errors (`dial`, `lookup`, `connect`, loopback failures) indicate
+sandboxed network access; an HTTP 401 "Bad credentials" response indicates
+authentication failure.
