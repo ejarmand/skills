@@ -13,7 +13,7 @@
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME [--] [codex exec args...]
 #
-# The runner owns the child's authority envelope — CODEX_HOME, --ephemeral,
+# The runner owns the child's authority envelope — CODEX_HOME,
 # --sandbox read-only, -C workspace — so child arguments are allowlisted:
 # only `--json`, `--output-last-message <path>`, `--model`/`-m`, and the
 # prompt pass through. `--ignore-user-config` and `--ignore-rules` silently
@@ -121,7 +121,10 @@ trap 'forward_signal INT' INT
 trap 'forward_signal HUP' HUP
 
 # stdin closed: codex exec otherwise blocks reading it in headless use.
-env CODEX_HOME="$tmp_home" codex exec --ephemeral --sandbox read-only \
+# No --ephemeral: an ephemeral root registers no thread id, so full-history
+# child forks fail ("no thread with id"); session files land in the temp
+# home and are removed with it.
+env CODEX_HOME="$tmp_home" codex exec --sandbox read-only \
   -C "$workspace" "$@" < /dev/null &
 child_pid=$!
 

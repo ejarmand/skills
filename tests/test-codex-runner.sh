@@ -92,8 +92,10 @@ esac
 [ -d "$FAKE_HOME/.codex/skills" ] && pass "real skills dir survives cleanup" \
   || fail "cleanup removed the real skills dir"
 case "$(record args)" in
-  "exec --ephemeral --sandbox read-only -C $WS --json review task")
+  "exec --sandbox read-only -C $WS --json review task")
     pass "runner owns the envelope; child args pass through" ;;
+  *"--ephemeral"*)
+    fail "--ephemeral reintroduced: it breaks full-history child forks (no thread with id)" ;;
   *) fail "unexpected args: $(record args)" ;;
 esac
 [ "$(record stdin)" = "redirected" ] && pass "stdin closed for the child" \

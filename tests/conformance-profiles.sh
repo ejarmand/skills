@@ -108,14 +108,34 @@ assert_no_side_effects() {
   [ "$now" = "$canary_pr_reviews" ] || fail "$who: PR review count changed ($canary_pr_reviews -> $now)"
 }
 
+# Each read is asserted against ground truth the script fetches itself, so no
+# single successful read (e.g. the issue title) can carry a failed one.
 assert_read_output() {
   local who="$1" output="$2"
-  local title
+  local title diff_head readme_head
   title="$(gh issue view "$issue" --repo "$repo" --json title --jq .title)"
   case "$output" in
-    *"$title"*) pass "$who: gh reads returned real issue data" ;;
+    *"$title"*) pass "$who: issue read returned real data" ;;
     *) fail "$who: output does not contain issue title '$title'" ;;
   esac
+  diff_head="$(gh pr diff "$pr" --repo "$repo" | head -n 1)"
+  if [ -z "$diff_head" ]; then
+    fail "$who: cannot fetch PR diff ground truth for #$pr"
+  else
+    case "$output" in
+      *"$diff_head"*) pass "$who: PR diff read returned real data" ;;
+      *) fail "$who: output does not contain the diff's first line '$diff_head'" ;;
+    esac
+  fi
+  readme_head="$(head -n 1 "$workspace/README.md" 2>/dev/null)"
+  if [ -z "$readme_head" ]; then
+    fail "$who: workspace README.md missing or empty — no local-read ground truth"
+  else
+    case "$output" in
+      *"$readme_head"*) pass "$who: workspace file read returned real data" ;;
+      *) fail "$who: output does not contain README's first line '$readme_head'" ;;
+    esac
+  fi
 }
 
 assert_pr_comment() {
@@ -134,8 +154,8 @@ assert_pr_comment() {
 show() { echo "--- $1 transcript ---"; printf '%s\n' "$2"; echo "---"; }
 
 read_prompt() {
-  printf 'Authority conformance probe (reads). Run `gh issue view %s --repo %s` and report the issue title verbatim. Then run `gh pr view %s --repo %s` and `gh pr diff %s --repo %s | head -n 20` and summarize each in one line. Then print the first line of README.md from the workspace.' \
-    "$issue" "$repo" "$pr" "$repo" "$pr" "$repo"
+  printf 'Authority conformance probe (reads). End your report with these three lines, each completed with the verbatim raw output of its command: ISSUE_TITLE: <title from `gh issue view %s --repo %s --json title --jq .title`>; DIFF_HEAD: <first line of `gh pr diff %s --repo %s`>; README_HEAD: <first line of README.md in the workspace>.' \
+    "$issue" "$repo" "$pr" "$repo"
 }
 
 # Every attempt targets an externally observable effect, so a denial that

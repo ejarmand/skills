@@ -154,6 +154,22 @@ Operational notes, all observed live:
   workspace or any shared config, so parallel Codex dispatches need no lock —
   unlike the Cursor runner.
 
+**Addendum (2026-08-02): drop `--ephemeral` from this recipe.** Controlled
+probes on 0.146.0 show `--ephemeral` breaks full-history native child forks —
+the fork path looks up the parent thread before copying its context, and an
+ephemeral root registers no thread id, so the spawn fails with
+`collab spawn failed: no thread with id: <parent>` (fresh/no-history children
+bypass the lookup, which is why the simple spawn probes above still passed).
+This is the same root cause as the pre-existing adapter warning against
+`--ephemeral` when resume is needed. The flag was only ever session-persistence
+hygiene, and an incomplete version of it — the state writes listed above happen
+regardless — so the temp home's deletion subsumes its entire job: without the
+flag, session rollouts land in the assembled home and are removed with it.
+`run-profiled.sh` dispatches without the flag accordingly. Residual trade-off:
+a hard-killed runner (cleanup never runs) now leaves rollouts — the full
+conversation — in the temp dir alongside the state files that already leaked in
+that scenario.
+
 ### 1.4 Hazards that survive any Codex transport
 
 - **Workspace `.codex/rules/` loads without trust gating** (prior probe: rules
@@ -277,7 +293,8 @@ and, on Codex, the unreliable name-binding surface (#32587).
 ## 6. Recommendations, ranked by confidence
 
 1. **High — replace the Codex transport with the assembled-ephemeral-home
-   direct dispatch** (§1.3): profile-as-home, auth symlinked, `--ephemeral`,
+   direct dispatch** (§1.3): profile-as-home, auth symlinked, no `--ephemeral`
+   (it breaks full-history child forks — §1.3 addendum),
    stdin closed, temp home deleted after verification. This deletes the
    bootstrap relay, the auth-copy question, and roughly 90% of the planned
    `run-profiled.sh` (no workspace staging, no lock, no restore) while keeping
