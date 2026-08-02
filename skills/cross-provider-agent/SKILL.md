@@ -11,32 +11,7 @@ profiles. The adapters — `/claude-agent`, `/codex-agent`, `/cursor-agent` —
 own their CLI transport: authentication, invocation forms, session capture,
 resume syntax, and provider quirks.
 
-## Doctrine
-
-**Authorization.** Invocation — by the user or by a skill the user invoked —
-authorizes running the chosen provider CLI for the requested task, including
-reading the necessary files in the intended workspace. It does not extend to
-pushes, merges, destructive actions, unrelated edits, or broader access.
-
-**Least authority.** Give the child the narrowest authority that completes
-the task: read-only or plan modes for analysis, planning, and review; write
-access only when the task authorizes implementation; a named profile when one
-fits. Never bypass sandboxes or approvals merely to make a run unattended.
-
-**Prompt discipline.** State the objective, permitted side effects, required
-verification, and desired response shape. For review work, permit exactly the
-profile's write surface and prohibit edits. Send no secrets and no unrelated
-parent-thread context.
-
-**Session skeleton.** Capture the session ID as soon as the provider emits
-it; never rely on "latest". Resume sequentially, never concurrently. Start a
-fresh session when the repository, task, or trust boundary changes.
-
-**Monitor, then verify.** Poll at the task's timescale without restarting a
-quiet process. Success requires both a clean process exit and the provider's
-terminal success event. Inspect the resulting files or Git diff yourself,
-then report outcome, verification, and session ID.
-
+## common failuress: 
 **Sandbox denial is not auth failure.** Transport errors (`dial`, `lookup`,
 `connect`, loopback failures) mean the sandbox denied network; an HTTP 401
 "Bad credentials" body means auth. Diagnose before reporting either.
@@ -52,13 +27,7 @@ then report outcome, verification, and session ID.
 
 A profile is a named, provider-neutral authority contract. Each adapter
 encodes it under `profiles/<name>/` beside its SKILL.md and owns applying it
-for exactly one invocation of one fresh child. Profiles carry authority only;
-task instructions travel in the dispatch prompt. When the task cites a
-skill, the adapter also owns transporting that skill into the isolated child
-— always from this repo's installed copy, never from the workspace under
-review. If pre-existing user,
-project, or enterprise policy would make the child's effective authority
-broader than the profile, fail closed instead of dispatching.
+for exactly one invocation of one fresh child. Profiles carry authority only.
 
 ### Profile index
 
@@ -67,7 +36,7 @@ broader than the profile, fail closed instead of dispatching.
   read and enforce [profiles/github-pr-reviewer.md](profiles/github-pr-reviewer.md)
   before choosing an adapter.
 
-## Dispatch
+## Dispatch requires:
 
 1. Require from the caller: an absolute path to a prepared workspace, the
    task prompt, and any profile and backend selection. The caller owns
@@ -76,10 +45,4 @@ broader than the profile, fail closed instead of dispatching.
 2. Fail closed when the workspace contains `.codex/` or `.cursor/`:
    workspace-resident provider config loads into the child's policy with no
    trust gate, letting the work under review grant its own reviewer
-   authority. (Claude is immune via `--setting-sources ""`.)
-3. Invoke the chosen adapter with the workspace, profile name, and prompt.
-   The adapter applies its profile encoding, runs one fresh child, preserves
-   output and session ID, and removes any configuration it staged.
-4. Verify per doctrine. When the caller pinned the workspace to a head,
-   confirm after the child exits that the workspace still points at it with a
-   clean tree, and discard the child's output when it does not.
+   authority. (Claude is immune) 
