@@ -42,82 +42,31 @@ cursor-agent -p --output-format stream-json --auto-review --trust \
 
 Drop `-p --output-format stream-json` for an interactive task.
 
-Every `-p` run requires `--trust`, including `--mode plan` and `--mode ask`; without it the run aborts immediately with `Workspace Trust Required`. Confirm the workspace is the intended one, then pass the flag.
+Every `-p` run requires `--trust`, including `--mode plan` and `--mode ask`; without it the run aborts immediately with `Workspace Trust Required`.
 
-`--auto-review` prompts for tool calls its classifier does not deem safe, and in `-p` mode no one can answer, so a run that needs approval can stall. For genuinely unattended work that must run any command, add `--force` instead.
+`--auto-review` prompts for tool calls its classifier does not deem safe, and in `-p` mode no one can answer, so the run can stall. For genuinely unattended work that must run any command, add `--force` instead.
 
 ## Capture the session ID
 
-Do not rely on "latest session" when later continuation matters. Return the ID to the caller and persist it in the caller's chosen task state.
-
-### Allocate an ID before starting
-
-Prefer this pattern when the ID must be known even if the first turn is interrupted:
-
-```bash
-cursor_chat_id="$(cursor-agent create-chat)"
-test -n "$cursor_chat_id"
-
-cursor-agent -p --output-format stream-json --auto-review --trust \
-  --resume="$cursor_chat_id" \
-  "[message]"
-```
-
-### Capture an ID from a completed run
-
-Use JSON when live progress is unnecessary:
-
-```bash
-cursor_run_json="$(cursor-agent -p --output-format json --auto-review --trust \
-  "[message]")"
-cursor_chat_id="$(printf '%s\n' "$cursor_run_json" | jq -er '.session_id')"
-printf '%s\n' "$cursor_run_json" | jq -r '.result'
-```
-
-### Capture an ID from a streamed run
-
-Use NDJSON when progress must remain visible:
-
-```bash
-cursor_run_log="$(mktemp -t cursor-agent.XXXXXX.ndjson)"
-set -o pipefail
-cursor-agent -p --output-format stream-json --auto-review --trust \
-  "[message]" \
-  | tee "$cursor_run_log"
-
-cursor_chat_id="$(jq -ser \
-  'map(select(.type == "system" and .subtype == "init"))[0].session_id' \
-  "$cursor_run_log")"
-```
+When the ID must be known even if the first turn is interrupted, allocate it up front with `cursor-agent create-chat` and pass `--resume="$cursor_chat_id"` from the first run onward. 
+Otherwise capture `session_id` from the stream's `system`/`init` event or the terminal result object.
 
 ## Resume a session
 
-Resume from the same workspace used to create the chat — Cursor chat discovery is workspace-scoped:
-
-```bash
-cursor-agent -p --output-format stream-json --auto-review --trust \
-  --resume="$cursor_chat_id" \
-  "[message]"
-```
-
-Use `cursor-agent ls` and `cursor-agent resume` interactively when an ID was not recorded.
+Resume with `--resume="$cursor_chat_id"` from the same workspace used to create the chat — chat discovery is workspace-scoped. Recover an unrecorded ID interactively with `cursor-agent ls` or `cursor-agent resume`.
 
 ## Monitor and verify
 
-Run a long invocation in the background and poll the NDJSON log often enough to surface approval prompts promptly.
-
-On completion:
-
-1. Confirm the process exit status and, for structured output, a successful terminal result event.
-2. Inspect the resulting files or Git diff independently.
-3. Run task-appropriate tests or checks if Cursor did not already do so.
-4. Report the outcome, verification, and session ID.
+Poll the NDJSON log often enough to surface approval prompts promptly. On completion require
+a clean exit and a successful terminal result event.
 
 A `cursor-agent` or `gh` failure with transport errors naming the URL is the sandbox denying network, not bad credentials; rerun with the environment's required network escalation.
 
 ## Profiled dispatch
 
-Cursor takes permission and sandbox policy only from configuration files, so profiled dispatch runs through the skill's transactional runner: `/absolute/path/to/cursor-agent/scripts/run-profiled.sh`
+Cursor takes permission and sandbox policy only from configuration files, so 
+profiled dispatch runs through the skill's transactional runner:
+`/absolute/path/to/cursor-agent/scripts/run-profiled.sh`
 
 The runner stages the profile for exactly one invocation, supervises the child, and restores the workspace byte-for-byte:
 

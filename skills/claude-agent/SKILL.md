@@ -45,36 +45,20 @@ cd /absolute/path/to/workspace && claude -p --output-format json \
 
 ## Capture the session ID
 
-Allocate the ID before starting when it must be known even if the first turn
-is interrupted:
-
-```bash
-claude_session_id="$(uuidgen)"
-claude -p --output-format json --session-id "$claude_session_id" \
-  "[message]"
-```
-
-With `--output-format json`, the terminal result object
-carries `session_id`, `result`, and `is_error`.
+When the ID must be known even if the first turn is interrupted, allocate it
+up front and pass it with `--session-id "$(uuidgen)"`. Otherwise read
+`session_id` from the terminal result object.
 
 ## Resume a session
 
-With the flag:
-
-```bash
---resume "$claude_session_id"
-```
-
-Use `--continue` only when continuing the most recent conversation is
-unambiguous. Add `--fork-session` when the follow-up must not extend the
-original session's history.
+Resume with `--resume "$claude_session_id"`. Use `--continue` only when
+continuing the most recent conversation is unambiguous. Add `--fork-session`
+when the follow-up must not extend the original session's history.
 
 ## Monitor and verify
 
-Run a long invocation in the background and inspect its output at intervals
-appropriate to the task. On completion require a zero exit status and
-`"is_error": false` in the result object; treat a nonzero exit or an error
-result as failure. The `result` field contains the worker's response.
+On completion require a zero exit status and `"is_error": false` in the
+result object; the `result` field contains the worker's response.
 
 ## Profiled dispatch
 
@@ -86,11 +70,10 @@ cd /absolute/path/to/workspace && claude -p --output-format json \
   "REVIEW_TASK"
 ```
 
-`--setting-sources ""` loads no user, project, or local settings layer, so
-pre-existing configuration cannot widen the child's authority. It also
-unloads installed skills, so `--plugin-dir` loads the skills repository
-root — always the repo that provides this adapter, never the workspace under
-review. Cite skills in the dispatch prompt by their namespaced name
+`--setting-sources ""` keeps pre-existing configuration from widening the
+child's authority, but also unloads installed skills, so `--plugin-dir` loads
+the skills repository root — always the repo that provides this adapter,
+never the workspace under review. Cite skills by namespaced name
 (`skills-repo:code-review`); the bare name resolves to Claude's bundled
 code-review, which rejects model invocation.
 
