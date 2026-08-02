@@ -53,7 +53,10 @@ then report outcome, verification, and session ID.
 A profile is a named, provider-neutral authority contract. Each adapter
 encodes it under `profiles/<name>/` beside its SKILL.md and owns applying it
 for exactly one invocation of one fresh child. Profiles carry authority only;
-task instructions travel in the dispatch prompt. If pre-existing user,
+task instructions travel in the dispatch prompt. When the task cites a
+skill, the adapter also owns transporting that skill into the isolated child
+— always from this repo's installed copy, never from the workspace under
+review. If pre-existing user,
 project, or enterprise policy would make the child's effective authority
 broader than the profile, fail closed instead of dispatching.
 
