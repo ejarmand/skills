@@ -24,6 +24,13 @@ codex login status
 If authentication is missing, ask the user to run `codex login`. Never display,
 copy, or embed authentication files or tokens.
 
+## agent permissions
+
+Use the least authority that completes the task. Never add
+`--dangerously-bypass-approvals-and-sandbox`, `danger-full-access`,
+`--ignore-rules`, or `--dangerously-bypass-hook-trust` merely to make a run
+unattended.
+
 ## Start a worker
 
 Resolve the intended working directory and whether the task may edit files.
@@ -31,15 +38,10 @@ Default analysis, planning, and review to a read-only sandbox:
 
 ```bash
 codex exec --json --sandbox read-only -C /absolute/path/to/repo \
-  "Act as an independent worker for the current task. Complete TASK. Do not make changes or perform external side effects. Return a concise evidence-backed result."
+  "[message]"
 ```
 
-Use workspace write access only when the user's task authorizes implementation:
-
-```bash
-codex exec --json --sandbox workspace-write -C /absolute/path/to/repo \
-  "Act as an independent worker for the current task. Implement TASK within SCOPE, verify it, do not push or modify unrelated files, do not spawn more agents, and report changed files and checks."
-```
+Use `--sandbox workspace-write`  when the user's task authorizes implementation.
 
 Use `--output-last-message` when a separate final-result file is useful;
 keep result files and JSONL logs in a temporary location unless the user asks to
@@ -64,28 +66,9 @@ Resume a specific session sequentially from the intended checkout:
 ```bash
 codex exec --json --sandbox read-only -C /absolute/path/to/repo \
   resume SESSION_ID \
-  "Continue as an independent worker for the current task. Complete FOLLOW_UP without making changes and return an evidence-backed result."
+  "[message]"
 ```
-
-Use `--sandbox workspace-write` only for authorized edits. Put global
-`codex exec` options before `resume`. Add `--all` after `resume` only when
-explicit lookup needs cwd filtering disabled:
-
-```bash
-codex exec --json --sandbox read-only -C /absolute/path/to/repo \
-  resume --all SESSION_ID "Complete FOLLOW_UP without making changes."
-```
-
-Prefer an explicit ID. Use `--last` only when the user explicitly requests the
-most recent session and its identity is unambiguous. If the original workspace
-is unknown, do not authorize edits until the target checkout is resolved.
-
-When a user calls this "adoption," preserve the boundary:
-
-- This continues an external Codex CLI session; it does not re-parent it.
-- It does not appear under `/agent` or `/subagents`.
-- Native collaboration controls cannot steer or close it.
-- Control it through the CLI process and later `codex exec resume` calls.
+Put global `codex exec` options before `resume`.
 
 ## Monitor and collect
 
@@ -94,27 +77,15 @@ With `--json`, require a successful process exit and a terminal
 mismatched thread ID as failure. The final `item.completed` whose item type is
 `agent_message` contains the worker's result.
 
+## Profiled dispatch
 `codex exec` hardcodes never-ask approvals: a sandboxed command that needs
 network fails (on Linux, a bubblewrap loopback error) with no runtime
-escalation path. Pre-authorize the specific commands with execpolicy rules —
-see profiled dispatch below — instead of widening the sandbox.
+escalation path. Pre-authorize the specific commands with execpolicy rules 
+ instead of widening the sandbox
 
-Use the least authority that completes the task. Never add
-`--dangerously-bypass-approvals-and-sandbox`, `danger-full-access`,
-`--ignore-rules`, or `--dangerously-bypass-hook-trust` merely to make a run
-unattended.
+Use the transactional runner with scoped profiles : `/absolute/path/to/codex-agent/scripts/run-profiled.sh`
 
-## Profiled dispatch: github-pr-reviewer
-
-`profiles/github-pr-reviewer/` encodes the profile from
-`/cross-provider-agent` as a complete `CODEX_HOME` layer: `config.toml`
-(read-only sandbox + role instructions) plus a `rules/` directory whose
-execpolicy allows exactly the profile's `gh` surface to run outside the
-sandbox; local reads need no rules because they run inside it.
-
-The transactional runner assembles a throwaway home from the profile — auth
-symlinked to the real `~/.codex/auth.json` so token refreshes write through
-(truncate-in-place persistence, re-verify on version bumps), installed
+The transactional runner assembles a throwaway home from the profile installed
 skills symlinked so the child can invoke cited skills — runs one session as
 the profiled agent, and deletes the home afterwards:
 
@@ -127,16 +98,12 @@ the profiled agent, and deletes the home afterwards:
 
 The root session is the profiled agent — no bootstrap relay — and native
 children it spawns inherit the same sandbox and rules. Nothing touches the
-workspace, so parallel Codex dispatches need no lock. Never add
-`--ignore-user-config` or `--ignore-rules` to a profiled dispatch: each
-silently strips the profile's rules while its instructions keep applying
-(the runner rejects them).
+workspace, so parallel Codex dispatches need no lock.
 
 Known gap (0.146.0, live-verified): native file tools bypass the read-only
 sandbox, so file-write denial is detect-and-reject — verify the pinned head
 and a clean tree after dispatch and discard the child's output otherwise
-(`research/agent-permission-allowlists.md` §7). The runner refuses a
-workspace containing `.codex/`: its rules load into the child's policy with
+The runner refuses a workspace containing `.codex/`: its rules load into the child's policy with
 no trust gate.
 
 Verify a rule offline before relying on it:
@@ -151,3 +118,10 @@ Rules are experimental. Keep only narrow `allow` prefixes and never add a
 fallback rule: most-restrictive-wins would turn a broad `prompt` decision
 into a blocker under exec's never-ask approvals. A failed rule match fails
 closed — the command stays sandboxed with no network escape.
+
+### available profiles
+**github-pr-reviewer** : `profiles/github-pr-reviewer/` encodes the profile from
+`/cross-provider-agent` as a complete `CODEX_HOME` layer: `config.toml`
+(read-only sandbox + role instructions) plus a `rules/` directory whose
+execpolicy allows exactly the profile's `gh` surface to run outside the
+sandbox; local reads need no rules because they run inside it.
