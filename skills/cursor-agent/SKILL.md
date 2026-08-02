@@ -21,26 +21,7 @@ cursor-agent status --format json
 
 If authentication is missing, ask the user to run `cursor-agent login`, or use `CURSOR_API_KEY` when the user has already arranged it. Never print or embed an API key in a command.
 
-## Choose the execution mode
-
-Run from the repository checkout or pass `--workspace /absolute/path`.
-
-For an interactive task:
-
-```bash
-cursor-agent "Inspect the repository and implement TASK. Verify the result."
-```
-
-For a headless task with structured progress:
-
-```bash
-cursor-agent -p --output-format stream-json --auto-review --trust \
-  "Inspect the repository and implement TASK. Verify the result."
-```
-
-Every `-p` run requires `--trust`, including `--mode plan` and `--mode ask`. Without it the run aborts immediately with `Workspace Trust Required` and does nothing, because there is no interactive prompt to answer. Confirm that the current or specified workspace is the intended one, then pass the flag; the judgment call is which workspace, not whether to include it.
-
-`--auto-review` auto-runs tool calls its classifier deems safe and prompts for the rest. In non-interactive `-p` mode there is no one to answer that prompt, so a run that needs approval can stall. For genuinely unattended work that must run any command, add `--force` (see below) rather than relying on `--auto-review` alone.
+## agent permissions
 
 Use the least authority suitable for the task:
 
@@ -49,6 +30,21 @@ Use the least authority suitable for the task:
 - Prefer `--auto-review` for ordinary agent work.
 - Add `--force` only when the user authorized changes and unattended command execution is necessary.
 - Use `--sandbox enabled` when the task can run within Cursor's sandbox.
+
+## Start a worker
+
+Run from the repository checkout or pass `--workspace /absolute/path`. For a headless task with structured progress:
+
+```bash
+cursor-agent -p --output-format stream-json --auto-review --trust \
+  "[message]"
+```
+
+Drop `-p --output-format stream-json` for an interactive task.
+
+Every `-p` run requires `--trust`, including `--mode plan` and `--mode ask`; without it the run aborts immediately with `Workspace Trust Required`. Confirm the workspace is the intended one, then pass the flag.
+
+`--auto-review` prompts for tool calls its classifier does not deem safe, and in `-p` mode no one can answer, so a run that needs approval can stall. For genuinely unattended work that must run any command, add `--force` instead.
 
 ## Capture the session ID
 
@@ -64,7 +60,7 @@ test -n "$cursor_chat_id"
 
 cursor-agent -p --output-format stream-json --auto-review --trust \
   --resume="$cursor_chat_id" \
-  "Inspect the repository and complete TASK. Verify the result."
+  "[message]"
 ```
 
 ### Capture an ID from a completed run
@@ -73,7 +69,7 @@ Use JSON when live progress is unnecessary:
 
 ```bash
 cursor_run_json="$(cursor-agent -p --output-format json --auto-review --trust \
-  "Inspect the repository and complete TASK. Verify the result.")"
+  "[message]")"
 cursor_chat_id="$(printf '%s\n' "$cursor_run_json" | jq -er '.session_id')"
 printf '%s\n' "$cursor_run_json" | jq -r '.result'
 ```
@@ -86,7 +82,7 @@ Use NDJSON when progress must remain visible:
 cursor_run_log="$(mktemp -t cursor-agent.XXXXXX.ndjson)"
 set -o pipefail
 cursor-agent -p --output-format stream-json --auto-review --trust \
-  "Inspect the repository and complete TASK. Verify the result." \
+  "[message]" \
   | tee "$cursor_run_log"
 
 cursor_chat_id="$(jq -ser \
@@ -94,28 +90,17 @@ cursor_chat_id="$(jq -ser \
   "$cursor_run_log")"
 ```
 
-The initialization event emits `session_id` near the start, and the terminal result event repeats it after success.
-
 ## Resume a session
 
-Resume from the same workspace used to create the chat. Cursor chat discovery is workspace-scoped.
-
-Continue a specific session non-interactively:
+Resume from the same workspace used to create the chat — Cursor chat discovery is workspace-scoped:
 
 ```bash
 cursor-agent -p --output-format stream-json --auto-review --trust \
   --resume="$cursor_chat_id" \
-  "Continue from the prior work. Address FOLLOW_UP and verify the result."
+  "[message]"
 ```
 
-Use these interactive recovery commands when an ID was not recorded:
-
-```bash
-cursor-agent ls
-cursor-agent resume
-```
-
-Use `cursor-agent -p --continue "FOLLOW_UP"` only when continuing the most recent session is unambiguous. Prefer `--resume="$cursor_chat_id"` for automation.
+Use `cursor-agent ls` and `cursor-agent resume` interactively when an ID was not recorded.
 
 ## Monitor and verify
 
@@ -128,11 +113,13 @@ On completion:
 3. Run task-appropriate tests or checks if Cursor did not already do so.
 4. Report the outcome, verification, and session ID.
 
-A `cursor-agent` or `gh` failure with transport errors naming the URL is the sandbox denying network, not bad credentials (`/cross-provider-agent` doctrine); rerun with the environment's required network escalation.
+A `cursor-agent` or `gh` failure with transport errors naming the URL is the sandbox denying network, not bad credentials; rerun with the environment's required network escalation.
 
-## Profiled dispatch: github-pr-reviewer
+## Profiled dispatch
 
-Cursor takes permission and sandbox policy only from configuration files, so profiled dispatch runs through the skill's transactional runner, which stages the profile for exactly one invocation and restores the workspace byte-for-byte:
+Cursor takes permission and sandbox policy only from configuration files, so profiled dispatch runs through the skill's transactional runner: `/absolute/path/to/cursor-agent/scripts/run-profiled.sh`
+
+The runner stages the profile for exactly one invocation, supervises the child, and restores the workspace byte-for-byte:
 
 ```bash
 /absolute/path/to/cursor-agent/scripts/run-profiled.sh \
@@ -141,6 +128,13 @@ Cursor takes permission and sandbox policy only from configuration files, so pro
   -- -p --output-format json --trust "REVIEW_TASK"
 ```
 
-The runner stages the profile under an isolated `CURSOR_CONFIG_DIR` and workspace `.cursor/` snapshot, supervises the child, and restores everything byte-for-byte (mechanics in the script header). Setup failure prevents launch; cleanup failure is failure even when the child succeeded; a workspace lock rejects concurrent runners, so parallel dispatches need separate workspaces; after an untrappable crash, the next invocation recovers the stale transaction.
+A workspace lock rejects concurrent runners, so parallel dispatches need separate workspaces.
 
-Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the profile's allowlist is the whole command surface; the runner allowlists child arguments — `-p`/`--print`, `--trust`, `--output-format`, `--model`, and the prompt — and rejects everything else. `cli.json` is the profile's canonical permissions object — the runner derives the global config Cursor needs from it at stage time. The profile pairs multi-word `Shell(...)` allows — live-verified but undocumented — with a `sandbox.json` GitHub-only network allowlist as defense in depth.
+Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the profile's allowlist is the whole command surface; the runner allowlists child arguments and rejects everything else.
+
+### available profiles
+**github-pr-reviewer** : `profiles/github-pr-reviewer/` encodes the profile from
+`/cross-provider-agent` with `cli.json` as the canonical permissions object:
+multi-word `Shell(...)` allows — live-verified but undocumented — for exactly
+the profile's `gh` surface, paired with a `sandbox.json` GitHub-only network
+allowlist as defense in depth.

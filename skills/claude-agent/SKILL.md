@@ -25,6 +25,13 @@ If a run fails with an authentication error, ask the user to run `claude`
 interactively and `/login`. Never display, copy, or embed authentication
 files or tokens.
 
+## agent permissions
+
+Use the least authority that completes the task. Default analysis, planning,
+and review to `--permission-mode plan`; for authorized implementation drop it
+and grant the task's specific needs with `--allowedTools`. Never add
+`--dangerously-skip-permissions` merely to make a run unattended.
+
 ## Start a worker
 
 Run from the intended workspace directory — the working directory is the
@@ -33,11 +40,8 @@ workspace.
 ```bash
 cd /absolute/path/to/workspace && claude -p --output-format json \
   --permission-mode plan \
-  "Act as an independent worker for the current task. Complete TASK without making changes and return a concise evidence-backed result."
+  "[message]"
 ```
-
-For authorized implementation, drop `--permission-mode plan` and grant the
-task's specific needs with `--allowedTools`.
 
 ## Capture the session ID
 
@@ -47,7 +51,7 @@ is interrupted:
 ```bash
 claude_session_id="$(uuidgen)"
 claude -p --output-format json --session-id "$claude_session_id" \
-  "Inspect the repository and complete TASK. Verify the result."
+  "[message]"
 ```
 
 With `--output-format json`, the terminal result object
@@ -65,13 +69,14 @@ Use `--continue` only when continuing the most recent conversation is
 unambiguous. Add `--fork-session` when the follow-up must not extend the
 original session's history.
 
-## Profiled dispatch: github-pr-reviewer
+## Monitor and verify
 
-`profiles/github-pr-reviewer/settings.json` encodes the profile from
-`/cross-provider-agent` as pure permission rules: `dontAsk` default mode
-(auto-denies anything not pre-approved, so a headless run never stalls on a
-prompt), narrow allows for workspace reads and the profile's `gh` surface,
-and explicit denies for the nearby writes.
+Run a long invocation in the background and inspect its output at intervals
+appropriate to the task. On completion require a zero exit status and
+`"is_error": false` in the result object; treat a nonzero exit or an error
+result as failure. The `result` field contains the worker's response.
+
+## Profiled dispatch
 
 ```bash
 cd /absolute/path/to/workspace && claude -p --output-format json \
@@ -82,18 +87,16 @@ cd /absolute/path/to/workspace && claude -p --output-format json \
 ```
 
 `--setting-sources ""` loads no user, project, or local settings layer, so
-pre-existing configuration cannot widen the child's effective authority. It
-also unloads installed skills, so this repo's skills travel explicitly:
-`--plugin-dir` loads the skills repository root, whose `.claude-plugin/`
-manifest packages `skills/` as the `skills-repo` plugin — always the repo
-that provides this adapter, never the workspace under review. Cite skills in
-the dispatch prompt by their namespaced name — the review contract is
-`skills-repo:code-review`; the bare name resolves to Claude's bundled
+pre-existing configuration cannot widen the child's authority. It also
+unloads installed skills, so `--plugin-dir` loads the skills repository
+root — always the repo that provides this adapter, never the workspace under
+review. Cite skills in the dispatch prompt by their namespaced name
+(`skills-repo:code-review`); the bare name resolves to Claude's bundled
 code-review, which rejects model invocation.
 
-## Monitor and verify
-
-Run a long invocation in the background and inspect its output at intervals
-appropriate to the task. On completion require a zero exit status and
-`"is_error": false` in the result object; treat a nonzero exit or an error
-result as failure. The `result` field contains the worker's response.
+### available profiles
+**github-pr-reviewer** : `profiles/github-pr-reviewer/settings.json` encodes
+the profile from `/cross-provider-agent` as pure permission rules: `dontAsk`
+default mode (auto-denies anything not pre-approved, so a headless run never
+stalls on a prompt), narrow allows for workspace reads and the profile's `gh`
+surface, and explicit denies for the nearby writes.
