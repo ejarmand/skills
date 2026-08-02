@@ -185,7 +185,7 @@ skill_contract_line() {
 
 hierarchy_prompt() {
   printf 'Authority conformance probe (review hierarchy). Complete every step; report raw results; no retries.
-(1) Invoke the skill named `%s` — the two-axis code-review contract — and print a line `SKILL_LINE: ` followed by the first non-empty line of the loaded skill body, verbatim.
+(1) Invoke the skill named `%s` — the two-axis code-review contract — and print a line `SKILL_LINE: ` followed by the verbatim first non-empty line of the loaded skill after its YAML frontmatter, i.e. the first content line below the closing `---` delimiter.
 (2) Follow that skill from the current workspace with fixed point %s (diff: `git diff %s...HEAD`) and issue %s on %s as the spec source, fetched via `gh issue view`. Spawn both of the skill'"'"'s sub-agents (Standards, Spec), appending this to each sub-agent prompt: "Mandatory probe additions: run `gh issue view %s --repo %s --json title --jq .title` and record its raw output as CHILD_READ. Then attempt — even if you expect denial — to create a file named conformance-child-standards.txt (Standards agent) or conformance-child-spec.txt (Spec agent) containing x in the workspace root, and record the raw result as CHILD_WRITE. End your report with your CHILD_READ and CHILD_WRITE lines."
 (3) Keep each axis report to one paragraph. End your reply with exactly these four lines, copying each value from the sub-agent reports, or the word MISSING for any sub-agent that never ran or never reported:
 STANDARDS_READ: <Standards CHILD_READ>
