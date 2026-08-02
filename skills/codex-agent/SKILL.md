@@ -107,30 +107,37 @@ unattended.
 ## Profiled dispatch: github-pr-reviewer
 
 `profiles/github-pr-reviewer/` encodes the profile from
-`/cross-provider-agent` as an agent config layer (`reviewer.toml`) plus a
-sibling `rules/` directory. The execpolicy rules allow exactly the profile's
-`gh` surface to run outside the read-only sandbox; local reads need no rules
-because they run inside it.
+`/cross-provider-agent` as a complete `CODEX_HOME` layer: `config.toml`
+(read-only sandbox + role instructions) plus a `rules/` directory whose
+execpolicy allows exactly the profile's `gh` surface to run outside the
+sandbox; local reads need no rules because they run inside it.
 
-Load the profile for one invocation by absolute path — the workspace stays
-untouched:
+The transactional runner assembles a throwaway home from the profile — auth
+symlinked to the real `~/.codex/auth.json` so token refreshes write through
+(truncate-in-place persistence, re-verify on version bumps), installed
+skills symlinked so the child can invoke cited skills — runs one session as
+the profiled agent, and deletes the home afterwards:
 
 ```bash
-codex exec --json --sandbox read-only -C /absolute/path/to/workspace \
-  -c 'agents.github_pr_reviewer.description="Profiled PR reviewer."' \
-  -c 'agents.github_pr_reviewer.config_file="/absolute/path/to/codex-agent/profiles/github-pr-reviewer/reviewer.toml"' \
-  "Spawn one fresh github_pr_reviewer child (no full-history fork) for REVIEW_TASK, wait for it, and relay its result verbatim."
+/absolute/path/to/codex-agent/scripts/run-profiled.sh \
+  --workspace /absolute/path/to/workspace \
+  --profile github-pr-reviewer \
+  -- --json "REVIEW_TASK"
 ```
 
-The child must be a fresh spawn; a full-history fork rejects `agent_type`.
-Role binding has an open reliability bug (openai/codex#32587) that fails
-closed here: a child without the role gets no rules, hence no network escape.
+The root session is the profiled agent — no bootstrap relay — and native
+children it spawns inherit the same sandbox and rules. Nothing touches the
+workspace, so parallel Codex dispatches need no lock. Never add
+`--ignore-user-config` or `--ignore-rules` to a profiled dispatch: each
+silently strips the profile's rules while its instructions keep applying
+(the runner rejects them).
+
 Known gap (0.146.0, live-verified): native file tools bypass the read-only
 sandbox, so file-write denial is detect-and-reject — verify the pinned head
 and a clean tree after dispatch and discard the child's output otherwise
-(`research/agent-permission-allowlists.md` §7).
-This dispatch nests a parent CLI agent around the child, roughly doubling
-token cost — the price of leaving the workspace untouched.
+(`research/agent-permission-allowlists.md` §7). The runner refuses a
+workspace containing `.codex/`: its rules load into the child's policy with
+no trust gate.
 
 Verify a rule offline before relying on it:
 
@@ -142,4 +149,5 @@ codex execpolicy check \
 
 Rules are experimental. Keep only narrow `allow` prefixes and never add a
 fallback rule: most-restrictive-wins would turn a broad `prompt` decision
-into a blocker under exec's never-ask approvals.
+into a blocker under exec's never-ask approvals. A failed rule match fails
+closed — the command stays sandboxed with no network escape.

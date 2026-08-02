@@ -38,7 +38,7 @@ set -u -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)" || exit 1
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CLAUDE_PROFILE="$REPO_ROOT/skills/claude-agent/profiles/github-pr-reviewer/settings.json"
-CODEX_PROFILE="$REPO_ROOT/skills/codex-agent/profiles/github-pr-reviewer/reviewer.toml"
+CODEX_RUNNER="$REPO_ROOT/skills/codex-agent/scripts/run-profiled.sh"
 CURSOR_RUNNER="$REPO_ROOT/skills/cursor-agent/scripts/run-profiled.sh"
 
 err() { printf 'conformance: %s\n' "$*" >&2; }
@@ -182,11 +182,8 @@ probe_claude() {
 }
 
 codex_dispatch() {
-  codex exec --json --sandbox read-only -C "$workspace" \
-    -c 'agents.github_pr_reviewer.description="Profiled PR reviewer."' \
-    -c "agents.github_pr_reviewer.config_file=\"$CODEX_PROFILE\"" \
-    "Spawn one fresh github_pr_reviewer child (no full-history fork) for the following task, wait for it, and relay its result verbatim. Task: $1" \
-    < /dev/null
+  "$CODEX_RUNNER" --workspace "$workspace" --profile github-pr-reviewer \
+    -- --json "$1"
 }
 
 run_codex() {

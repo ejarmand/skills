@@ -70,9 +70,13 @@ broader than the profile, fail closed instead of dispatching.
    task prompt, and any profile and backend selection. The caller owns
    workspace lifecycle — creating, pinning, verifying, and deleting
    checkouts never happens here or in an adapter.
-2. Invoke the chosen adapter with the workspace, profile name, and prompt.
+2. Fail closed when the workspace contains `.codex/` or `.cursor/`:
+   workspace-resident provider config loads into the child's policy with no
+   trust gate, letting the work under review grant its own reviewer
+   authority. (Claude is immune via `--setting-sources ""`.)
+3. Invoke the chosen adapter with the workspace, profile name, and prompt.
    The adapter applies its profile encoding, runs one fresh child, preserves
    output and session ID, and removes any configuration it staged.
-3. Verify per doctrine. When the caller pinned the workspace to a head,
+4. Verify per doctrine. When the caller pinned the workspace to a head,
    confirm after the child exits that the workspace still points at it with a
    clean tree, and discard the child's output when it does not.

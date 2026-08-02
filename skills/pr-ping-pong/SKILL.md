@@ -95,21 +95,24 @@ prompt as `git diff BASE_OID...HEAD_OID`.
 
 ### 3. Review
 
-Each reviewer provider runs **two fresh sessions per rally — one per axis**
-(Standards, Spec). Dispatch each through `/cross-provider-agent` under the
-`github-pr-reviewer` profile with the absolute `checkout` and a prompt built
-from the matching axis brief in
-[code-review step 4](../code-review/SKILL.md) — the single copy of both briefs.
-On top of the brief, each prompt sets:
+Each reviewer provider runs **one fresh review coordinator per rally**,
+dispatched through `/cross-provider-agent` under the `github-pr-reviewer`
+profile with the absolute `checkout`. The coordinator invokes `/code-review`
+— the single copy of the review contract — which spawns its two
+context-isolated native children (Standards, Spec) inside the profile's
+authority. On top of that, each coordinator's prompt sets:
 
-- the pinned `git diff BASE_OID...HEAD_OID` as the diff command;
-- for the Spec session, the tagged issue or PR as the spec source, fetched
-  through the profile's `gh` reads;
-- publication: post the review as one top-level PR comment whose first line is
-  `<provider> / <axis> / rally <n> / <head OID>`.
+- the pinned `git diff BASE_OID...HEAD_OID` as the fixed point;
+- the tagged issue or PR as the spec source, fetched through the profile's
+  `gh` reads;
+- publication: aggregate both axis reports into one top-level PR comment
+  whose first line is `<provider> / rally <n> / <head OID>`.
 
-The sessions are independent — run them concurrently. After they finish, read
-the posted comments back; they are the triage input.
+Coordinators from different providers must not share `checkout` at the same
+time — the Cursor runner stages workspace config that trips another
+dispatch's clean-tree verification. Run providers sequentially, or pin one
+checkout per provider. After they finish, read the posted comments back;
+they are the triage input.
 
 ### 4. Triage
 
@@ -142,8 +145,8 @@ leave the PR unmerged and say why in the report.
 
 ## Report
 
-Close with a rally table — per rally, the base and head SHAs, each review
-session's outcome, findings accepted and rejected — then the final state,
+Close with a rally table — per rally, the base and head SHAs, each provider
+review's outcome, findings accepted and rejected — then the final state,
 surviving non-blocking findings, the merge outcome or why it was skipped, and
 the PR URL. Report the implementer's session ID so the user can resume it. For
 a new PR, also report the worktree path.
