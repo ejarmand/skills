@@ -11,7 +11,7 @@
 # coordinator owns workspace lifecycle (create/pin/verify/delete); this
 # runner never performs git or worktree operations.
 #
-# usage: run-profiled.sh --workspace /abs/path --profile NAME [--] [codex exec args...]
+# usage: run-profiled.sh --workspace /abs/path --profile NAME [--effort LEVEL] [--] [codex exec args...]
 #
 # The runner owns the child's authority envelope — CODEX_HOME,
 # --sandbox read-only, -C workspace — so child arguments are allowlisted:
@@ -37,16 +37,18 @@ EX_SETUP=71
 err() { printf 'run-profiled: %s\n' "$*" >&2; }
 
 usage() {
-  err "usage: run-profiled.sh --workspace /abs/path --profile NAME [--] [codex exec args...]"
+  err "usage: run-profiled.sh --workspace /abs/path --profile NAME [--effort LEVEL] [--] [codex exec args...]"
   exit "$EX_USAGE"
 }
 
 workspace=""
 profile=""
+effort=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --workspace) [ $# -ge 2 ] || usage; workspace="$2"; shift 2 ;;
     --profile)   [ $# -ge 2 ] || usage; profile="$2"; shift 2 ;;
+    --effort)    [ $# -ge 2 ] || usage; effort="$2"; shift 2 ;;
     --) shift; break ;;
     -h|--help) usage ;;
     *) break ;;
@@ -55,6 +57,10 @@ done
 
 [ -n "$workspace" ] || usage
 [ -n "$profile" ] || usage
+case "$effort" in
+  ""|minimal|low|medium|high|xhigh|max|ultra) ;;
+  *) err "invalid effort: $effort"; exit "$EX_USAGE" ;;
+esac
 expect_value=""
 for arg in "$@"; do
   if [ -n "$expect_value" ]; then
@@ -124,7 +130,9 @@ trap 'forward_signal HUP' HUP
 # No --ephemeral: an ephemeral root registers no thread id, so full-history
 # child forks fail ("no thread with id"); session files land in the temp
 # home and are removed with it.
-env CODEX_HOME="$tmp_home" codex exec --sandbox read-only \
+effort_args=()
+[ -z "$effort" ] || effort_args=(-c "model_reasoning_effort=\"$effort\"")
+env CODEX_HOME="$tmp_home" codex exec "${effort_args[@]}" --sandbox read-only \
   -C "$workspace" "$@" < /dev/null &
 child_pid=$!
 

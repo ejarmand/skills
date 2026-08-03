@@ -93,8 +93,14 @@ the profiled agent, and deletes the home afterwards:
 /absolute/path/to/codex-agent/scripts/run-profiled.sh \
   --workspace /absolute/path/to/workspace \
   --profile github-pr-reviewer \
+  --effort xhigh \
   -- --json "REVIEW_TASK"
 ```
+
+Omit `--effort` to use the selected model's configured default. The runner
+validates an explicit effort and translates it to the narrow
+`model_reasoning_effort` Codex configuration override; arbitrary `-c` child
+arguments remain rejected.
 
 The root session is the profiled agent — no bootstrap relay — and native
 children it spawns inherit the same sandbox and rules. Nothing touches the

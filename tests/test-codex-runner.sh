@@ -101,7 +101,25 @@ esac
 [ "$(record stdin)" = "redirected" ] && pass "stdin closed for the child" \
   || fail "stdin left open"
 
-# --- 2. child exit propagates; cleanup still runs ---------------------------
+# --- 2. runner-owned effort becomes a narrow Codex config override ----------
+rm -f "$TMP/record"
+run_runner --workspace "$WS" --profile github-pr-reviewer --effort xhigh \
+  -- --model gpt-5.6-luna "review task"
+rc=$?
+[ "$rc" -eq 0 ] && pass "effort dispatch exits 0" || fail "effort dispatch exited $rc"
+[ "$(record args)" = "exec -c model_reasoning_effort=\"xhigh\" --sandbox read-only -C $WS --model gpt-5.6-luna review task" ] \
+  && pass "validated effort becomes the exact Codex config override" \
+  || fail "unexpected effort args: $(record args)"
+
+rm -f "$TMP/record"
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --effort 'xhigh,model_provider="attacker"' -- "task" 2>/dev/null
+rc=$?
+[ "$rc" -eq 2 ] && [ ! -f "$TMP/record" ] \
+  && pass "rejects an invalid effort without launching" \
+  || fail "invalid effort: rc=$rc invoked=$([ -f "$TMP/record" ] && echo yes || echo no)"
+
+# --- 3. child exit propagates; cleanup still runs ---------------------------
 rm -f "$TMP/record"
 FAKE_EXIT=7 run_runner --workspace "$WS" --profile github-pr-reviewer -- "task"
 rc=$?
@@ -110,7 +128,7 @@ tmp_home="$(record home)"
 [ ! -e "$tmp_home" ] && pass "temporary home removed after failed child" \
   || fail "temporary home left behind after failure: $tmp_home"
 
-# --- 3. child argument allowlist --------------------------------------------
+# --- 4. child argument allowlist --------------------------------------------
 for bad in --ignore-rules --ignore-user-config --sandbox --full-auto; do
   rm -f "$TMP/record"
   run_runner --workspace "$WS" --profile github-pr-reviewer -- "$bad" "task" 2>/dev/null
@@ -120,7 +138,7 @@ for bad in --ignore-rules --ignore-user-config --sandbox --full-auto; do
     || fail "$bad: rc=$rc invoked=$([ -f "$TMP/record" ] && echo yes || echo no)"
 done
 
-# --- 4. workspace containing .codex/ is refused ------------------------------
+# --- 5. workspace containing .codex/ is refused ------------------------------
 mkdir -p "$WS/.codex/rules" || exit 1
 rm -f "$TMP/record"
 run_runner --workspace "$WS" --profile github-pr-reviewer -- "task" 2>/dev/null
@@ -130,7 +148,7 @@ rc=$?
   || fail ".codex preflight: rc=$rc invoked=$([ -f "$TMP/record" ] && echo yes || echo no)"
 rm -rf "$WS/.codex"
 
-# --- 5. missing auth fails closed --------------------------------------------
+# --- 6. missing auth fails closed --------------------------------------------
 mv "$FAKE_HOME/.codex/auth.json" "$TMP/auth.stash" || exit 1
 rm -f "$TMP/record"
 run_runner --workspace "$WS" --profile github-pr-reviewer -- "task" 2>/dev/null
@@ -140,7 +158,7 @@ rc=$?
   || fail "auth preflight: rc=$rc invoked=$([ -f "$TMP/record" ] && echo yes || echo no)"
 mv "$TMP/auth.stash" "$FAKE_HOME/.codex/auth.json" || exit 1
 
-# --- 6. no stray temp homes ---------------------------------------------------
+# --- 7. no stray temp homes ---------------------------------------------------
 leftovers="$(find "$RUN_TMPDIR" -maxdepth 1 -name 'codex-profile.*' | wc -l)"
 [ "$leftovers" -eq 0 ] && pass "no stray temporary homes" \
   || fail "$leftovers stray temporary home(s) under $RUN_TMPDIR"
