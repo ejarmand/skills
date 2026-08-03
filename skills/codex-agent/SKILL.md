@@ -92,6 +92,7 @@ the profiled agent, and deletes the home afterwards:
 ```bash
 /absolute/path/to/codex-agent/scripts/run-profiled.sh \
   --workspace /absolute/path/to/workspace \
+  [--effort [effort level]] \
   --profile github-pr-reviewer \
   -- --json "REVIEW_TASK"
 ```
