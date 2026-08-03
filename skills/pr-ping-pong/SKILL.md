@@ -49,7 +49,7 @@ to create or inspect worktrees.
 
 ## The rally
 
-One rally is one implementation pass, a push, all reviews, and triage. Run at
+One rally is one implementation pass, a push, all reviews, and adjudication. Run at
 most the budgeted number. The implementer keeps **one session across rallies** —
 resume it, never concurrently — so it carries its decisions forward. Reviewers
 get **fresh sessions every rally**.
@@ -112,9 +112,9 @@ Coordinators from different providers must not share `checkout` at the same
 time — the Cursor runner stages workspace config that trips another
 dispatch's clean-tree verification. Run providers sequentially, or pin one
 checkout per provider. After they finish, read the posted comments back;
-they are the triage input.
+they are the adjudication input.
 
-### 4. Triage
+### 4. Adjudicate findings
 
 Reviewers are wrong sometimes, and an implementer that obeys every finding will
 churn or regress. Adjudicate each blocking finding against the code:
@@ -130,7 +130,7 @@ than deferring to whichever spoke last.
 
 Stop and report at the first of these:
 
-1. **Pass** — no accepted blocking finding outstanding after triage.
+1. **Pass** — no accepted blocking finding outstanding after adjudication.
 2. **Budget** — rally cap reached. Report the surviving findings.
 3. **Failure** — an implementer errors, cannot proceed, or the branch stops
    building. Report the state; do not burn rallies on a broken tree.

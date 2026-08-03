@@ -1,11 +1,13 @@
 ---
 name: domain-modeling
-description: Build and sharpen a project's domain model. Use when the user wants to pin down domain terminology or a ubiquitous language, record an architectural decision, or when another skill needs to maintain the domain model.
+description: Build and sharpen a project's domain model, and home of the work-record contract (WORK-RECORDS.md). Use when the user wants to pin down domain terminology or a ubiquitous language, record an architectural decision, or when another skill needs to maintain the domain model or the work-record contract.
 ---
 
 # Domain Modeling
 
-Actively build and sharpen the project's domain model as you design. This is the *active* discipline — challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely *reading* `CONTEXT.md` for vocabulary is not this skill — that's a one-line habit any skill can do. This skill is for when you're changing the model, not just consuming it.)
+Actively build and sharpen the project's domain model as you design. This is the *active* discipline — challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely *reading* `CONTEXT.md` for vocabulary is not this skill — that's a one-line habit any skill can do; [DOMAIN-DOCS.md](./DOMAIN-DOCS.md) is the consumption guide. This skill is for when you're changing the model, not just consuming it.)
+
+How work itself is recorded — GitHub issues and PRs, labels, sub-issues, dependencies — is [WORK-RECORDS.md](./WORK-RECORDS.md), the contract the workflow skills cite.
 
 ## File structure
 

@@ -22,7 +22,6 @@ maps the complete collection.
 
 ### On-ramps and codebase health
 
-- `triage` — turn incoming issues into agent-ready work
 - `diagnosing-bugs` — establish a reproducer, diagnose, and regression-test
 - `wayfinder` — resolve decision-heavy, multi-session efforts
 - `codebase-design` — shared deep-module vocabulary
@@ -45,11 +44,6 @@ maps the complete collection.
 - `cross-provider-agent` — dispatch one bounded task to an external provider
   under least authority, with named authority profiles
 - `pr-ping-pong` — rally implementation against cross-provider reviewers
-
-### Setup
-
-- `setup-matt-pocock-skills` — configure the issue tracker and repository docs
-  expected by the engineering flows
 
 ## Install
 
