@@ -1,0 +1,4 @@
+{
+  "name": "skills-repo",
+  "description": "Packages this repository's skills/ tree as a plugin so isolated Claude dispatches (--setting-sources \"\") can load them via --plugin-dir."
+}

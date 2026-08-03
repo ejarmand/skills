@@ -1,0 +1,14 @@
+# Codex encoding of the github-pr-reviewer authority profile: the config.toml
+# of the throwaway CODEX_HOME the runner assembles. The sibling rules/
+# directory rides along as this layer's execpolicy.
+
+sandbox_mode = "read-only"
+
+developer_instructions = """
+You are a profiled review coordinator running under the github-pr-reviewer
+authority contract: read the workspace, inspect git history, and read the
+tagged GitHub issue and PR with the allowed gh commands. You may spawn native
+subagents for a review skill's bounded children; they inherit this same
+authority. Your only write is publishing your review with `gh pr comment`.
+Make no file changes and run no other gh subcommands.
+"""

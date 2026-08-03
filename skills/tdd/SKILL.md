@@ -33,8 +33,7 @@ Ask yourself: "What's the public interface, and which seams matter?"
 
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
-- **Refactoring is not part of the red → green loop.** After the requested
-  behavior is green, the enclosing `/implement` flow moves to `/code-review`,
-  whose Standards axis enforces the unified standard in
-  `../codebase-design/STANDARD.md`. Fix what review reports rather than
-  running a cleanup pass mid-loop.
+- **Refactoring is not part of the red → green loop.** Refactor after the
+  requested behavior is green, guided by the unified standard in
+  `../codebase-design/STANDARD.md` — already in context when `/implement`
+  drives the loop — rather than running a cleanup pass mid-loop.

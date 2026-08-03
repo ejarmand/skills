@@ -16,7 +16,7 @@ maps the complete collection.
 - `prototype` — answer one design question with throwaway code
 - `to-spec` — turn a conversation into a buildable spec
 - `to-tickets` — split a spec into ordered tracer-bullet tickets
-- `implement` — run the TDD, review, and verification sequence
+- `implement` — run the TDD and verification sequence
 - `tdd` — build behavior in red → green slices
 - `code-review` — review Standards and Spec as separate axes
 
@@ -44,7 +44,6 @@ maps the complete collection.
 - `cursor-agent` — execute and resume independent Cursor Agent work
 - `cross-provider-agent` — dispatch one bounded task to an external provider
   under least authority, with named authority profiles
-- `cross-provider-review` — run and publish one independent review
 - `pr-ping-pong` — rally implementation against cross-provider reviewers
 
 ### Setup

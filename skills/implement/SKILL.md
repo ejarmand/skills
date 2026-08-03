@@ -5,16 +5,15 @@ description: "Implement a prepared spec or set of tickets. Use when the user ask
 
 Implement the work described by the user in the spec or tickets.
 
-Capture the fixed point for the eventual review before editing. Then follow this
-sequence:
+Write against the unified code standard in
+[`../codebase-design/STANDARD.md`](../codebase-design/STANDARD.md) as you go;
+independent review happens outside this session. Follow this sequence:
 
 1. Use `/tdd`, working in red → green slices. Choose the seams under test per
    its seam doctrine — prefer seams the spec establishes — and note them.
 2. Run focused typechecking and tests for the touched behavior.
-3. Invoke `/code-review` against the captured fixed point. Review reports;
-   address its Standards and Spec findings in this implementation session.
-4. Run the full typecheck and test suite once at the end.
-5. Commit the verified work to the current branch. Declare the tested seams in
+3. Run the full typecheck and test suite once at the end.
+4. Commit the verified work to the current branch. Declare the tested seams in
    the PR description (or the final report when no PR exists) so reviewers can
    validate the seam choice.
 
