@@ -2,7 +2,7 @@
 
 Work for these skills is tracked on GitHub — issues own intent and decisions, PRs own implementation and review. Use the `gh` CLI; infer the repo from the clone.
 
-`ready-for-agent` — applied by `/to-spec` and `/to-tickets` at publish; means the issue is fully specified. Blocking lives in dependency edges, not labels.
+`ready-for-agent` — applied by `/to-spec` and `/to-tickets` at publish; means the issue is fully specified. Blocking lives in dependency edges.
 
 ## Wayfinding operations
 
