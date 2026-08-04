@@ -6,7 +6,7 @@ The domain model for skills. A skill exists to afford — to give the model or t
 
 ## Affordance
 
-Direction or capability the model or user would not otherwise have. Two axes: the model's — behaviour distant from training defaults, like interrogating the user or trusting subagents — and the user's — leverage, like autonomy, decomposition past human working memory, or faster comprehension. A skill can be entirely in-domain for the model and still afford the user plenty. Model-relative and decaying: as models improve, distant behaviour becomes native, and the line that afforded it becomes a **no-op**. The existence test for every skill and every line.
+Direction or capability the model or user would not otherwise have. Two axes: the model's — behaviour distant from training defaults, like interrogating the user or trusting subagents — and the user's — leverage, like autonomy, decomposition past human working memory, or faster comprehension. Model-relative and decaying: as models improve, distant behaviour becomes native, and the line that afforded it becomes a **no-op**.
 
 ## Predictability
 
@@ -60,17 +60,13 @@ A compact concept already in the model's pretraining that the agent thinks with 
 
 _Failure mode._ A line the model already obeys by default — load spent to change nothing. The line-level **affordance** test: does it change behaviour versus the current model's default? Model-relative, and the default moves: a line that earned its place last year may be a no-op today. Disputes are settled by running the skill, not by debate.
 
-## Subagent Distrust
-
-A named model default: models re-verify subagent findings and wrap dispatch in defensive scaffolding unless steered otherwise. Deleting distrust text does not recalibrate the default — counter-steer actively: write trust-the-coordinator as the resting posture and treat agent findings as trusted input.
-
 ## Stakes Test
 
-Whether a guard earns its place: guard only failures that are frequent or hard to recover from. Rare and hand-recoverable earns no guard — every reader pays for the line; the occasional manual fix is cheaper.
+Whether a guard earns its place: guard only failures that are frequent or hard to recover from. Rare and hand-recoverable earns no guard — every reader pays for the line.
 
 ## Loosening
 
-The default resolution of an open question: delete the constraining text rather than write the clarifying answer. Ambiguity is an acceptable resting state — the model's judgment fills blanks better than pre-written answers. The dynamic half of pruning: pruning clears what exists, loosening decides what never gets written.
+The default resolution of an open question: delete the constraining text rather than write the clarifying answer. Ambiguity is an acceptable resting state — the model's judgment fills blanks better than pre-written answers.
 
 ## Historical Contrast
 
