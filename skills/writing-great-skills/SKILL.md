@@ -30,17 +30,17 @@ Two choices, trading different costs:
 - A **model-invoked** skill keeps a description the agent can see: it can fire autonomously, and other skills can reach it. It pays **context load** — the description sits in the window every turn.
 - A **user-invoked** skill (`disable-model-invocation: true`) strips the description from the agent: only you can fire it, and no other skill can. Zero context load, but it spends **cognitive load** — you are the index that must remember it exists.
 
-Pick model-invocation only when the agent, or another skill, must reach it on its own. Split off a new model-invoked skill only when a distinct **leading word** should trigger it independently. 
+Pick model-invocation only when the agent, or another skill, must reach it on its own. Split off a new model-invoked skill only when a distinct _leading word_ should trigger it independently. 
 
 When user-invoked skills multiply past what you can remember, a **router skill** cures the pile-up.
 
-A model-invoked description does two jobs: state what the skill is, and list the triggers that should fire it. Front-load the skill's **leading word**, collapse synonym triggers, and cut identity that's already in the body. A user-invoked description is human-facing: one line.
+A model-invoked description does two jobs: state what the skill is, and list the triggers that should fire it. Front-load the skill's _leading word_, collapse synonym triggers, and cut identity that's already in the body. A user-invoked description is human-facing: one line.
 
 ## Arranging content
 
 The primary content is the **destination** and the tools for reaching it; reference — definitions, rules, facts — supports on demand. **Steps** earn a place only when necessary.
 
-**Progressive disclosure** keeps the top legible: push behind a **context pointer** what only some runs need, inline what every run needs. A pointer's wording, not its target, decides whether the material is reached. Keep a concept's definition, rules, and caveats under one heading, so reading one part brings its neighbours.
+Progressive disclosure keeps the top legible: push behind a **context pointer** what only some runs need, inline what every run needs. A pointer's wording, not its target, decides whether the material is reached. Keep a concept's definition, rules, and caveats under one heading, so reading one part brings its neighbours.
 
 ## Trusting the agent
 
@@ -49,7 +49,7 @@ The primary content is the **destination** and the tools for reaching it; refere
 
 ## Leading words
 
-A **leading word** is a compact concept already in the model's pretraining that anchors a whole region of behaviour in one token (_lesson_, _fog of war_, _tracer bullets_). In the body it anchors execution; in the description it anchors invocation — when the same word lives in your prompts, docs, and code, the skill fires more reliably. A triad spelled out at three sites, a description spending a sentence to gesture at one idea — each is a passage begging to collapse into a single word.
+A _leading word_ is a compact concept already in the model's pretraining that anchors a whole region of behaviour in one token (_lesson_, _fog of war_, _tracer bullets_). Repeat it as a token, never as a sentence; a coined word recruits no priors — reach for an existing one. In the body it anchors execution; in the description it anchors invocation — when the same word lives in your prompts, docs, and code, the skill fires more reliably. A triad spelled out at three sites, a description spending a sentence to gesture at one idea — each is a passage begging to collapse into a single word.
 
 ## Pruning
 
@@ -57,5 +57,5 @@ Keep each meaning in one authoritative place. Check every line for relevance, hu
 
 - *Sediment* — stale layers that settle because adding feels safe and removing feels risky.
 - *Sprawl* — a skill too long even when every line is live; cure by disclosure, not compression.
-- *Duplication* — one meaning in two places: a maintenance cost and a false weight.
+- *Duplication* — one meaning in two places: a maintenance cost and a false weight. Its commonest shape is the em-dash paraphrase: "I'm walking south — the opposite of north."
 - **Historical contrast** — "we do this now, not what we used to do." Contrast earns its place only when it disambiguates a live fork the model might take.
