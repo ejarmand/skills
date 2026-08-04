@@ -12,15 +12,16 @@ This file is also the review standard for skills and agent-facing docs: judge su
 
 ## What a skill affords
 
-- **Tools for the model** — capability or parameterization distant from its training defaults. Models don't interrogate their users, so a grilling skill affords interrogation; they arrive distrusting subagents, so a dispatch skill affords trust.
+- **Tools for the model** — capability or parameterization distant from its training defaults. Models don't interrogate their users, so a grilling skill affords interrogation; they arrive using only native subagents, so a dispatch skill affords access to other models. 
 - **Tools for the user** — leverage beyond their own: autonomy, decomposition past human working memory, faster comprehension.
 - **A shared destination** — alignment on what done looks like, with the route left to the model's judgment.
 
 The existence test runs at two levels. A *skill* can earn its place on either axis, model or user. A *line* earns its place by the **no-op** test — does it change model behaviour? — excepting the few lines written for human eyes, like a **user-invoked** description.
 
-What a skill must not be is a route. **Path-teaching** — walking the model from A to B — was written for models that couldn't find the way; today it boxes the one that can. State the **destination**, checkably, and trust the model with the route. **Predictability** still matters inside affordance — a capability that fires erratically isn't afforded — but process specified past what the destination needs is **the box**.
+**Path-teaching** — walking the model from A to B — was written for models that couldn't find the way; today it boxes the one that can. State the **destination**, and trust the model with the route. 
+**Predictability** matters within affordance — a capability that fires erratically isn't afforded — but process specified past what the destination needs is **the box**.
 
-Affordance decays: behaviour that needed a skill last year is native now. Grade every line against the current model, and settle **no-op** disputes by running the skill, not by debate.
+Affordance decays: behaviour that needed a skill last year is native now. Grade against current models. 
 
 ## Invocation
 
@@ -29,19 +30,20 @@ Two choices, trading different costs:
 - A **model-invoked** skill keeps a description the agent can see: it can fire autonomously, and other skills can reach it. It pays **context load** — the description sits in the window every turn.
 - A **user-invoked** skill (`disable-model-invocation: true`) strips the description from the agent: only you can fire it, and no other skill can. Zero context load, but it spends **cognitive load** — you are the index that must remember it exists.
 
-Pick model-invocation only when the agent, or another skill, must reach it on its own. Split off a new model-invoked skill only when a distinct **leading word** should trigger it independently — each new description spends context load. When user-invoked skills multiply past what you can remember, a **router skill** cures the pile-up.
+Pick model-invocation only when the agent, or another skill, must reach it on its own. Split off a new model-invoked skill only when a distinct **leading word** should trigger it independently. 
+
+When user-invoked skills multiply past what you can remember, a **router skill** cures the pile-up.
 
 A model-invoked description does two jobs: state what the skill is, and list the triggers that should fire it. Front-load the skill's **leading word**, collapse synonym triggers, and cut identity that's already in the body. A user-invoked description is human-facing: one line.
 
 ## Arranging content
 
-The primary content is the **destination** and the tools for reaching it; reference — definitions, rules, facts — supports on demand. **Steps** earn a place only where order is externally imposed: a protocol, an API's required sequence, a mechanism that only works run in order. The test is the direction of justification — order the world dictated before you wrote the skill is real; an affordance story written after the step exists is path-teaching.
+The primary content is the **destination** and the tools for reaching it; reference — definitions, rules, facts — supports on demand. **Steps** earn a place only when necessary.
 
 **Progressive disclosure** keeps the top legible: push behind a **context pointer** what only some runs need, inline what every run needs. A pointer's wording, not its target, decides whether the material is reached. Keep a concept's definition, rules, and caveats under one heading, so reading one part brings its neighbours.
 
 ## Trusting the agent
 
-- Counter-steer **subagent distrust** in text: state that agent findings are trusted input, and write no verification scaffolding around dispatch.
 - The **stakes test** decides whether a guard earns its place: guard failures that are frequent or hard to recover. Rare and hand-recoverable earns nothing.
 - **Loosening** resolves open questions: default to deleting the constraining text rather than writing the clarifying answer. Ambiguity is an acceptable resting state.
 
