@@ -26,8 +26,6 @@ Look for the originating spec, in this order:
 
 1. Issue references in the commit messages (`#123`, `Closes #45`, etc.) — fetch per the work-record contract in [`../domain-modeling/WORK-RECORDS.md`](../domain-modeling/WORK-RECORDS.md).
 2. A path the user passed as an argument.
-3. A PRD/spec file under `docs/` or `specs/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
 ### 3. Identify the standards sources
 
@@ -59,11 +57,3 @@ Present the two reports under `## Standards` and `## Spec` headings, verbatim or
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any).
 
-## Why two axes
-
-A change can pass one axis and fail the other:
-
-- Code that follows every standard but implements the wrong thing → **Standards pass, Spec fail.**
-- Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
-
-Reporting them separately stops one axis from masking the other.
