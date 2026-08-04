@@ -14,6 +14,7 @@ Git info exclude — no tracked `.gitignore` change unless asked.
 
 ```bash
 repo_root="$(git rev-parse --show-toplevel)"
+default_branch="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)"
 branch="ppp/issue-N-slug"
 worktree_path="$repo_root/worktrees/$branch"
 exclude_file="$(git -C "$repo_root" rev-parse --path-format=absolute --git-path info/exclude)"
