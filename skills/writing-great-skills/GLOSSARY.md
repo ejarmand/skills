@@ -48,6 +48,9 @@ A user-invoked skill naming your other user-invoked skills and when to reach for
 
 A reference held in context naming out-of-context material and when to reach it. The description is the top-level pointer; pointers to disclosed files are the same object one level down. Fix a missed pointer by sharpening its wording before inlining the material.
 
+## Leading Word
+A compact concept already in the model's pretraining that effectively anchors behavior in shared concepts (_lesson_, _fog of war_, _affordance_).
+
 ## No-Op
 
 _Failure mode._ A line the model already obeys by default. The line-level **affordance** test: does it change behaviour versus the current model's default? Disputes are settled by running the skill, not by debate.
