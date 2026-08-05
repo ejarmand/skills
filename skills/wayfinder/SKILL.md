@@ -4,23 +4,23 @@ description: Plan a huge chunk of work — more than one agent session can hold 
 disable-model-invocation: true
 ---
 
-A loose idea has arrived — too big for one agent session, and wrapped in fog: the way from here to the **destination** isn't visible yet. Wayfinding is about finding that way, not charging at the destination. This skill charts the way as a **shared map** of GitHub issues, then works its **decision tickets** — questions whose resolution is a decision, not slices of a build to execute — one at a time until the route is clear.
+A loose idea has arrived — too big for one agent session, and wrapped in fog: the way from here to the **destination** isn't visible yet. Wayfinding is about discovering a path charted as **shared map** of GitHub issues, then breaks down decision forks until a clear implementation path remains.
 
-The destination varies per effort, and naming it is the first act of charting — it shapes every ticket. It might be a spec to hand off and iterate on, a decision to lock before planning starts, or a change made in place like a data-structure migration. The map is domain-agnostic — engineering work, course content, whatever fits the shape.
+The destination is variable, and shapes every ticket. It might be a spec to hand off and iterate on, a decision to lock before planning starts, or a change made in place like a data-structure migration. The map is domain-agnostic.
 
 ## Plan, don't do
 
-Wayfinder is **planning** by default: each ticket resolves a decision, and the map is done when the way is clear — nothing left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off. An effort can override this in its **Notes** — carrying execution into the map itself — but absent that, produce decisions, not deliverables.
+Wayfinder is **planning**, making a series of decisions untill no further decision is necessary before if someone wants to implement. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off.
 
 ## Refer by name
 
-Every map and ticket is an issue, so it has a **name** — its title. In everything the human reads — narration, the map's Decisions-so-far — refer to it by that name, never by a bare id, number, or slug. A wall of `#42, #43, #44` is illegible; names read at a glance. The id and URL don't vanish — a name wraps its link — but they ride *inside* the name, never stand in for it.
+Every map and ticket is an issue, and it's title should be a referrable **name**. Use that name as a human oriented vocabulary for describing goals and decision process. The name, should still carry the numerical issue id, but needs to be descriptive.
 
 ## The Map
 
 The map is a single issue; its tickets are child issues of the map. Creating them, blocking, the frontier query, claiming, and resolving are the wayfinding operations in the work-record contract, [`../domain-modeling/WORK-RECORDS.md`](../domain-modeling/WORK-RECORDS.md).
 
-The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
+The map is an **index** listing the decisions made and points at the tickets that hold their detail. Decisions live in their respective ticket, so the map never restates it, only gists it and links.
 
 ### The map body
 
@@ -52,7 +52,7 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ### Tickets
 
-A ticket's body is the question, sized to one 100K token agent session:
+A ticket's body is the question, sized to a single independant concern:
 
 ```markdown
 ## Question
