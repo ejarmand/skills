@@ -4,23 +4,23 @@ description: Plan a huge chunk of work — more than one agent session can hold 
 disable-model-invocation: true
 ---
 
-A loose idea has arrived — too big for one agent session, and wrapped in fog: the way from here to the **destination** isn't visible yet. Wayfinding is about discovering a path charted as **shared map** of GitHub issues, then breaks down decision forks until a clear implementation path remains.
+A loose idea has arrived — too big for one agent session, and wrapped in fog: the way from here to the **destination** isn't visible yet. Wayfinding is about discovering a path charted as a **shared map** of GitHub issues, breaking down decision forks until a clear implementation path remains.
 
 The destination is variable, and shapes every ticket. It might be a spec to hand off and iterate on, a decision to lock before planning starts, or a change made in place like a data-structure migration. The map is domain-agnostic.
 
 ## Plan, don't do
 
-Wayfinder is **planning**, making a series of decisions untill no further decision is necessary before if someone wants to implement. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off.
+Wayfinder is **planning**, making a series of decisions until no further decision is necessary before someone implements. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off.
 
 ## Refer by name
 
-Every map and ticket is an issue, and it's title should be a referrable **name**. Use that name as a human oriented vocabulary for describing goals and decision process. The name, should still carry the numerical issue id, but needs to be descriptive.
+Every map and ticket is an issue, and its title should be a referrable **name**. Use that name as a human-oriented vocabulary for describing goals and decision process. The name should still carry the numerical issue id, but needs to be descriptive.
 
 ## The Map
 
 The map is a single issue; its tickets are child issues of the map. Creating them, blocking, the frontier query, claiming, and resolving are the wayfinding operations in the work-record contract, [`../domain-modeling/WORK-RECORDS.md`](../domain-modeling/WORK-RECORDS.md).
 
-The map is an **index** listing the decisions made and points at the tickets that hold their detail. Decisions live in their respective ticket, so the map never restates it, only gists it and links.
+The map is an **index** listing the decisions made and pointing at the tickets that hold their detail. Decisions live in their respective tickets, so the map never restates them, only gists and links them.
 
 ### The map body
 
@@ -52,7 +52,7 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ### Tickets
 
-A ticket's body is the question, sized to a single independant concern:
+A ticket's body is the question, sized to a single independent concern:
 
 ```markdown
 ## Question
