@@ -10,7 +10,6 @@ maps the complete collection.
 
 - `skill-router` — choose the right skill or flow
 - `grill-with-docs` — sharpen a codebase-backed idea and retain decisions
-- `grill-me` — sharpen an idea without a codebase
 - `grilling` — shared interview primitive
 - `handoff` — carry context into a fresh session
 - `prototype` — answer one design question with throwaway code
