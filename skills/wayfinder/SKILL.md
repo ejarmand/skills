@@ -18,9 +18,9 @@ Every map and ticket is an issue, and its title should be a referrable **name**.
 
 ## The Map
 
-The map is a single issue; its tickets are child issues of the map. Creating them, blocking, the frontier query, claiming, and resolving are the wayfinding operations in the work-record contract, [`../domain-modeling/WORK-RECORDS.md`](../domain-modeling/WORK-RECORDS.md).
+The map is a single with a child issue for each ticket. he wayfinding Creating them, blocking, the frontier query, claiming, and resolving are operations in the work-record contract, [`../domain-modeling/WORK-RECORDS.md`](../domain-modeling/WORK-RECORDS.md).
 
-The map is an **index** listing the decisions made and pointing at the tickets that hold their detail. Decisions live in their respective tickets, so the map never restates them, only gists and links them.
+The map is an **index** listing decisions and pointing to tickets with detailed descriptions. Decisions live in their respective tickets, so the map never restates them, only gists and links them.
 
 ### The map body
 
@@ -66,7 +66,7 @@ The answer isn't part of the body — it's recorded on resolution (see [Work thr
 
 ## Ticket Types
 
-Every ticket is either **HITL** — human in the loop, worked *with* a human who speaks for themselves — or **AFK**, driven by the agent alone. A HITL ticket only resolves through that live exchange; the agent never stands in for the human's side of it (a grilling agent that answers its own questions has broken this).
+Every ticket is either **HITL** — human in the loop, worked *with* a human responsible for resolving it — or **AFK**, driven by the agent alone.
 
 - **Research** (AFK): Reading documentation, third-party APIs, or local resources like knowledge bases to surface a fact a decision waits on. Resolved by a `/research` **subagent**. Use when knowledge outside the current working directory is required.
 - **Prototype** (HITL): Raise the fidelity of the discussion by making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub, or UI/logic code via the /prototype skill. Links the prototype as an asset. Use when "how should it look" or "how should it behave" is the key question.
@@ -75,7 +75,7 @@ Every ticket is either **HITL** — human in the loop, worked *with* a human who
 
 ## Fog of war
 
-The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond the live tickets lies the **fog of war** — the dim view of decisions and investigations you can tell are coming but can't yet pin down, because they hang on questions still open. Resolving a ticket clears the fog ahead of it, graduating whatever's now specifiable into fresh tickets — one at a time, until the way to the destination is clear and no tickets remain.
+The map is _deliberately_ incomplete: don't chart what you can't yet see. Beyond the live tickets lies the **fog of war** — the dim view of decisions and investigations you can tell are coming but can't yet pin down, because they depend on open questions. As tickets resolve the fog clears, and new tickets can bes specified. This process continues until the way to the destination is clear.
 
 The map's **Not yet specified** section is where that dim view is written down: the suspected question, the area to revisit later. It's the undiscovered frontier _toward_ the destination — everything here is in scope, just not sharp enough to ticket. Write as loosely or as fully as the view allows; it doubles as a signpost for collaborators reading where the effort is headed.
 
