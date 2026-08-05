@@ -50,7 +50,7 @@ A reference held in context naming out-of-context material and when to reach it.
 
 ## Leading Word
 
-A compact concept already in the model's pretraining that effectively anchors behavior in shared concepts (_lesson_, _fog of war_, _affordance_). A highly valuable inclusion to any skill.
+A compact concept already in the model's pretraining that effectively anchors behavior in shared concepts (_lesson_, _seam_, _affordance_). A highly valuable inclusion to any skill.
 
 ## No-Op
 

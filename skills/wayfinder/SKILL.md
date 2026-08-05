@@ -41,9 +41,9 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 - [<closed ticket title>](link) — <one-line gist of the answer>
 
-## Not yet specified
+## Downstream decisions
 
-<!-- in-scope questions too vague to ticket yet; they graduate to tickets as the frontier advances -->
+<!-- in-scope decisions downstream of open tickets, too vague to ticket yet; they graduate as upstream work resolves -->
 
 ## Out of scope
 
@@ -73,20 +73,20 @@ Every ticket is either **HITL** — human in the loop, worked *with* a human res
 - **Grilling** (HITL): Conversation via the `/grilling` and `/domain-modeling` skills, one question at a time. The default case.
 - **Task** (HITL or AFK): Manual work a decision is blocked on — nothing to decide, just something that must exist first: signing up for a service so its API can be judged, provisioning access, moving data so its shape can be seen. The one type that *does* rather than decides; it earns its place by unblocking a decision, not by delivering the destination. The agent drives it alone where it can (AFK); otherwise it hands the human a precise checklist (HITL). The answer records what was done and the facts later tickets depend on (credential locations, new URLs, row counts).
 
-## Not yet specified
+## Downstream decisions
 
-The map is _deliberately_ incomplete: don't chart what you can't yet see. Some decisions and investigations are visibly coming but can't be pinned down yet — they depend on open questions. Those go in the map's **Not yet specified** section: the suspected question, the area to revisit later. Everything here is in scope, just not sharp enough to ticket. Write as loosely or as fully as current knowledge allows; the section doubles as a signpost for collaborators reading where the effort is headed. As tickets resolve, entries sharpen and **graduate** into tickets of their own, until the way to the destination is clear.
+The map is _deliberately_ incomplete: don't chart what you can't yet see. Some decisions and investigations are visibly coming but can't be pinned down yet — they sit **downstream** of open questions. Those go in the map's **Downstream decisions** section: the suspected question, the area to revisit later. Everything here is in scope, just not sharp enough to ticket. Write as loosely or as fully as current knowledge allows; the section doubles as a signpost for collaborators reading where the effort is headed. As upstream tickets resolve, entries sharpen and **graduate** into tickets of their own, until the way to the destination is clear.
 
-**Ticket or not yet specified?** The test is whether you can state the question precisely now — _not_ whether you can answer it now.
+**Ticket or downstream?** The test is whether you can state the question precisely now — _not_ whether you can answer it now.
 
 - **Ticket** when the question is already sharp — even if it's blocked and you can't act on it yet.
-- **Not yet specified** when you can't yet phrase it that sharply. Don't pre-slice an entry into ticket-sized pieces: it's coarser than a ticket, and may graduate into several tickets, or none.
+- **Downstream** when you can't yet phrase it that sharply. Don't pre-slice an entry into ticket-sized pieces: it's coarser than a ticket, and may graduate into several tickets, or none.
 
-**Not yet specified** excludes what's already decided (Decisions so far), what's already a live ticket, and what's out of scope (the next section).
+**Downstream decisions** excludes what's already decided (Decisions so far), what's already a live ticket, and what's out of scope (the next section).
 
 ## Out of scope
 
-The destination fixes the scope. Work beyond it is **out of scope** — excluded by scope, not by sharpness — and goes in the map's **Out of scope** section, never in **Not yet specified**.
+The destination fixes the scope. Work beyond it is **out of scope** — excluded by scope, not by sharpness — and goes in the map's **Out of scope** section, never in **Downstream decisions**.
 
 Out-of-scope work never graduates; it returns only if the destination is redrawn, and then as a fresh effort.
 
@@ -101,8 +101,8 @@ Two modes. Either way, **never resolve more than one ticket per session** — re
 User invokes with a loose idea.
 
 1. **Name the destination.** Run `/grilling` and `/domain-modeling` to pin down the spec, decision, or change this map is finding its way to. It fixes the scope, so settle it first.
-2. **Map the frontier.** Grill again, **breadth-first**: fan out across the whole space, surfacing the open decisions and the first steps takeable now. **If nothing lands in Not yet specified** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
-3. **Create the map**: Destination and Notes filled in, Decisions-so-far empty, what you can't yet ticket sketched into **Not yet specified**.
+2. **Map the frontier.** Grill again, **breadth-first**: fan out across the whole space, surfacing the open decisions and the first steps takeable now. **If nothing lands in Downstream decisions** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
+3. **Create the map**: Destination and Notes filled in, Decisions-so-far empty, what you can't yet ticket sketched into **Downstream decisions**.
 4. **Create the tickets you can specify now** as child issues of the map, then wire blocking edges in a **second pass** (issues need ids before they can reference each other). Wiring sorts them into the frontier and the blocked.
 5. **Fire the research subagents.** For each `research` ticket, spin up a `/research` subagent to resolve it in parallel, capturing findings on a throwaway `research/<name>` branch with a context pointer from the ticket.
 6. Stop — charting is one session's work; it hand-resolves nothing.
@@ -115,7 +115,7 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 2. Choose the ticket — the user's, or the first frontier ticket in order. **Claim it** before any work.
 3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. If in doubt, use `/grilling` and `/domain-modeling`.
 4. Record the resolution — the contract's resolve operation.
-5. Add newly-surfaced tickets (create-then-wire); graduate whatever the answer has made specifiable — each entry leaves **Not yet specified** and becomes a ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope**. If it invalidates other parts of the map, update or delete those tickets.
-6. When no open tickets remain and **Not yet specified** is empty, the way is clear — run `/to-spec` to publish the map's decisions as the spec.
+5. Add newly-surfaced tickets (create-then-wire); graduate whatever the answer has made specifiable — each entry leaves **Downstream decisions** and becomes a ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope**. If it invalidates other parts of the map, update or delete those tickets.
+6. When no open tickets remain and **Downstream decisions** is empty, the way is clear — run `/to-spec` to publish the map's decisions as the spec.
 
 The user may run unblocked tickets in parallel, so expect other sessions to be editing the map and its tickets concurrently.
