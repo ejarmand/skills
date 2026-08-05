@@ -1,0 +1,4 @@
+interface:
+  display_name: "Batch Luna Agents"
+  short_description: "Fan out Luna workers in one shell call"
+  default_prompt: "Use $batch-luna-agents to fan out these independent tasks through one bounded shell pool."
