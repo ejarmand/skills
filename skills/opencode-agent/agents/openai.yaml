@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCode Agent"
+  short_description: "Run OpenCode workers across model providers"
+  default_prompt: "Use $opencode-agent to run this task through OpenCode with an explicit provider/model and preserve the session ID for follow-up work."

@@ -76,9 +76,9 @@ Two model-invoked references that run *beneath* the other skills — each the si
 - **`/cross-provider-agent`** — the dispatch primitive: one bounded task on
   an external-provider agent under least authority, with named authority
   profiles (e.g. `github-pr-reviewer`). Owns the shared doctrine.
-- **`/claude-agent`**, **`/codex-agent`**, and **`/cursor-agent`** — transport
-  adapters over the external agent CLIs: invocation forms, session
-  capture/resume, and profile encodings.
+- **`/claude-agent`**, **`/codex-agent`**, **`/cursor-agent`**, and
+  **`/opencode-agent`** — transport adapters over the external agent CLIs:
+  invocation forms, session capture/resume, and profile encodings.
 
 ## Standalone
 

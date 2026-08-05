@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# Hermetic public-interface tests for the OpenCode profiled runner.
+# Fake executables observe the launch envelope; no namespace, network, or
+# authenticated provider session is used.
+set -u -o pipefail
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)" || exit 1
+RUNNER="$REPO/skills/opencode-agent/scripts/run-profiled.sh"
+PROFILE="$REPO/skills/opencode-agent/profiles/github-pr-reviewer/config.json"
+
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/test-opencode-runner.XXXXXX")" || exit 1
+trap 'rm -rf "$TMP"' EXIT
+
+failures=0
+fail() { echo "FAIL: $*" >&2; failures=$((failures + 1)); }
+pass() { echo "ok: $*"; }
+
+FAKE_BIN="$TMP/bin"
+mkdir -p "$FAKE_BIN" || exit 1
+
+cat > "$FAKE_BIN/opencode" <<'FAKE'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  echo "${FAKE_OPENCODE_VERSION:-1.18.13}"
+  exit 0
+fi
+exit 99
+FAKE
+
+cat > "$FAKE_BIN/bwrap" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$BWRAP_ARGS"
+if [ -n "${GH_TOKEN:-}" ]; then echo set > "$BWRAP_GH_AUTH"; fi
+exit "${FAKE_BWRAP_EXIT:-0}"
+FAKE
+
+chmod +x "$FAKE_BIN/opencode" "$FAKE_BIN/bwrap" || exit 1
+
+WS="$TMP/workspace"
+RUN_TMPDIR="$TMP/state"
+mkdir -p "$WS" "$RUN_TMPDIR" || exit 1
+
+run_runner() {
+  PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" GH_TOKEN=fake \
+    BWRAP_ARGS="$TMP/bwrap.args" BWRAP_GH_AUTH="$TMP/bwrap.gh-auth" \
+    "$RUNNER" "$@"
+}
+
+# A profiled dispatch is one model, one prompt, and one disposable boundary.
+rc=0
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "review issue 18" || rc=$?
+[ "$rc" -eq 0 ] || fail "dispatch exited $rc (want 0)"
+[ -f "$TMP/bwrap.args" ] || { fail "bubblewrap was not invoked"; exit 1; }
+
+grep -Fxq -- "--ro-bind" "$TMP/bwrap.args" \
+  && pass "runner creates read-only binds" || fail "read-only bind missing"
+grep -Fxq -- "$WS" "$TMP/bwrap.args" \
+  && pass "runner binds the selected workspace" || fail "workspace bind missing"
+grep -Fxq -- "OPENCODE_CONFIG_CONTENT" "$TMP/bwrap.args" \
+  && pass "runner injects the named profile" || fail "profile config missing"
+awk 'previous == "--unsetenv" && $0 == "OPENCODE_CONFIG" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
+  && pass "runner suppresses ambient custom config" || fail "ambient custom config remains enabled"
+grep -Fxq -- "openrouter/example-model" "$TMP/bwrap.args" \
+  && pass "runner selects the requested model" || fail "model missing"
+grep -Fxq -- "review issue 18" "$TMP/bwrap.args" \
+  && pass "runner forwards the prompt" || fail "prompt missing"
+[ "$(tail -n 2 "$TMP/bwrap.args" | head -n 1)" = -- ] \
+  && pass "runner separates the prompt from OpenCode flags" || fail "prompt has no option boundary"
+[ -f "$TMP/bwrap.gh-auth" ] \
+  && pass "caller authentication remains available" || fail "caller environment was cleared"
+
+state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
+[ -n "$state_root" ] || fail "writable state bind missing"
+[ -n "$state_root" ] && [ ! -e "$state_root" ] \
+  && pass "disposable state removed after dispatch" || fail "state was not cleaned up: $state_root"
+
+# The profile carries one reviewer identity across the complete hierarchy.
+[ "$(jq -r '.agent | keys | sort | join(",")' "$PROFILE")" = "reviewer,spec,standards" ] \
+  && pass "profile defines the reviewer and both review axes" || fail "profile agent roster drifted"
+[ "$(jq '[.agent[] | has("model")] | any' "$PROFILE")" = false ] \
+  && pass "children inherit the dispatch model" || fail "profile pins a per-agent model"
+[ "$(jq -r '.agent.reviewer.permission.task.standards' "$PROFILE")" = allow ] \
+  && [ "$(jq -r '.agent.reviewer.permission.task.spec' "$PROFILE")" = allow ] \
+  && pass "reviewer can delegate both axes" || fail "review hierarchy is not enabled"
+[ "$(jq -r '.agent.standards.permission.task' "$PROFILE")" = deny ] \
+  && [ "$(jq -r '.agent.spec.permission.task' "$PROFILE")" = deny ] \
+  && pass "review children cannot recurse" || fail "review child recursion is enabled"
+[ "$(jq -r '.agent.reviewer.permission.bash["gh pr comment *"]' "$PROFILE")" = allow ] \
+  && pass "reviewer can publish directly" || fail "profile lacks direct PR publication"
+
+# A failed child remains the result, and its state is still disposable.
+rm -f "$TMP/bwrap.args"
+rc=0
+FAKE_BWRAP_EXIT=7 run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "review issue 18" || rc=$?
+[ "$rc" -eq 7 ] && pass "bubblewrap child exit propagates" || fail "child exit became $rc"
+state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
+[ -n "$state_root" ] && [ ! -e "$state_root" ] \
+  && pass "failed dispatch state is removed" || fail "failed dispatch left state: $state_root"
+
+# Mechanical prerequisites fail before bubblewrap is launched.
+rm -f "$TMP/bwrap.args"
+rc=0
+FAKE_OPENCODE_VERSION=1.18.12 run_runner --workspace "$WS" \
+  --profile github-pr-reviewer --model openrouter/example-model -- "task" \
+  >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 71 ] && [ ! -f "$TMP/bwrap.args" ] \
+  && pass "wrong OpenCode version is refused before launch" \
+  || fail "wrong-version refusal: rc=$rc launched=$([ -f "$TMP/bwrap.args" ] && echo yes || echo no)"
+
+rm -f "$TMP/bwrap.args"
+rc=0
+env -u GH_TOKEN -u GITHUB_TOKEN PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
+  BWRAP_ARGS="$TMP/bwrap.args" BWRAP_GH_AUTH="$TMP/bwrap.gh-auth" \
+  "$RUNNER" --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 71 ] && [ ! -f "$TMP/bwrap.args" ] \
+  && pass "missing GitHub environment authentication is refused" \
+  || fail "missing-auth refusal: rc=$rc launched=$([ -f "$TMP/bwrap.args" ] && echo yes || echo no)"
+
+if [ "$failures" -gt 0 ]; then
+  echo "$failures failure(s)" >&2
+  exit 1
+fi
+echo "all opencode runner tests passed"

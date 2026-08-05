@@ -31,6 +31,8 @@
 # CONFORMANCE_PROBES selects a comma-separated subset of
 # read,denied,recursion,hierarchy,comment (default: all) for cheaper
 # iteration; a partial run is not a conformance pass.
+# OpenCode probes also require OPENCODE_CONFORMANCE_MODEL=provider/model and
+# that provider's normal environment credentials.
 #
 # Caveat: the denied-write probe instructs the child to *attempt* forbidden
 # operations and report raw errors. A child may refuse instead of attempting;
@@ -38,7 +40,7 @@
 # transcript to confirm enforcement rather than politeness did the blocking.
 #
 # usage:
-#   conformance-profiles.sh <claude|codex|cursor|all> \
+#   conformance-profiles.sh <claude|codex|cursor|opencode|all> \
 #     --workspace /abs/checkout --repo owner/name --issue N --pr N
 #
 # The cursor-lifetime subcommand re-runs the policy-snapshot regression probe
@@ -51,10 +53,11 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CLAUDE_PROFILE="$REPO_ROOT/skills/claude-agent/profiles/github-pr-reviewer/settings.json"
 CODEX_RUNNER="$REPO_ROOT/skills/codex-agent/scripts/run-profiled.sh"
 CURSOR_RUNNER="$REPO_ROOT/skills/cursor-agent/scripts/run-profiled.sh"
+OPENCODE_RUNNER="$REPO_ROOT/skills/opencode-agent/scripts/run-profiled.sh"
 
 err() { printf 'conformance: %s\n' "$*" >&2; }
 usage() {
-  err "usage: conformance-profiles.sh <claude|codex|cursor|all|cursor-lifetime> --workspace /abs/checkout --repo owner/name --issue N --pr N"
+  err "usage: conformance-profiles.sh <claude|codex|cursor|opencode|all|cursor-lifetime> --workspace /abs/checkout --repo owner/name --issue N --pr N"
   exit 2
 }
 
@@ -357,6 +360,83 @@ probe_codex() {
   fi
 }
 
+opencode_dispatch() {
+  local model="${OPENCODE_CONFORMANCE_MODEL:-}"
+  [ -n "$model" ] || { err "set OPENCODE_CONFORMANCE_MODEL=provider/model"; return 2; }
+  if [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+    "$OPENCODE_RUNNER" --workspace "$workspace" --profile github-pr-reviewer \
+      --model "$model" -- "$1"
+  else
+    local token
+    token="$(gh auth token)" || { err "cannot obtain a GitHub token for OpenCode"; return 2; }
+    GH_TOKEN="$token" "$OPENCODE_RUNNER" --workspace "$workspace" \
+      --profile github-pr-reviewer --model "$model" -- "$1"
+  fi
+}
+
+run_opencode() {
+  # One profiled dispatch; emits the root's accumulated text. OpenCode can
+  # exit zero before a final response, so the JSON stream must end in a clean
+  # stop. Individual tool errors are retained because denial probes require
+  # them; their expected effects and report markers are asserted separately.
+  local raw rc=0
+  raw="$(opencode_dispatch "$1")" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$raw" >&2
+    return "$rc"
+  fi
+  jq -rs '
+    if any(.[]; .type == "error" or .type == "session.error")
+    then ("opencode stream contains an error event") | halt_error(1)
+    elif (([.[] | select(.type == "step_finish") |
+                    (.part.reason? // .reason? // "")] | last // "") != "stop")
+    then ("opencode stream has no final stop") | halt_error(1)
+    else [.[] | select(.type == "text") | (.part.text? // .text? // empty)]
+         | join("")
+         | if length == 0
+           then ("opencode stream has no final text") | halt_error(1)
+           else .
+           end
+    end' <<<"$raw" \
+    || { printf '%s\n' "$raw" >&2; return 1; }
+}
+
+probe_opencode() {
+  echo "== opencode ($(opencode --version 2>/dev/null | head -n 1), ${OPENCODE_CONFORMANCE_MODEL:-model-unset}) =="
+  local marker="${OPENCODE_CONFORMANCE_MODEL%%/*} via OpenCode conformance-opencode-$$" out rc=0
+  record_canaries
+  if want read; then
+    out="$(run_opencode "$(read_prompt)")" || rc=$?
+    show "opencode read" "$out"
+    if [ "$rc" -eq 0 ]; then assert_read_output opencode "$out"; else fail "opencode: read probe failed ($rc)"; fi
+  fi
+  if want denied; then
+    rc=0; out="$(run_opencode "$(denied_prompt)")" || rc=$?
+    show "opencode denied" "$out"
+    [ "$rc" -eq 0 ] || fail "opencode: denied probe failed ($rc); absence of side effects is not evidence"
+    assert_no_side_effects opencode
+  fi
+  if want recursion; then
+    rc=0
+    out="$(run_opencode "$(recursion_prompt "opencode run \"$NEST_TASK\"")")" || rc=$?
+    show "opencode recursion" "$out"
+    [ "$rc" -eq 0 ] || fail "opencode: recursion probe failed ($rc); absence of side effects is not evidence"
+    assert_no_side_effects opencode
+  fi
+  if want hierarchy; then
+    rc=0; out="$(run_opencode "$(hierarchy_prompt "code-review")")" || rc=$?
+    show "opencode hierarchy" "$out"
+    if [ "$rc" -eq 0 ]; then assert_hierarchy opencode "$out"; else fail "opencode: hierarchy probe failed ($rc)"; fi
+    assert_no_side_effects opencode
+  fi
+  if want comment; then
+    rc=0; out="$(run_opencode "$(comment_prompt "$marker")")" || rc=$?
+    show "opencode comment" "$out"
+    [ "$rc" -eq 0 ] || fail "opencode: comment probe failed ($rc)"
+    assert_pr_comment opencode "$marker"
+  fi
+}
+
 probe_cursor() {
   echo "== cursor ($(cursor-agent --version 2>/dev/null | head -n 1)) =="
   local marker="conformance-cursor-$$" out rc=0
@@ -446,6 +526,12 @@ else
   case "$workspace" in /*) ;; *) err "workspace must be absolute"; exit 2 ;; esac
   git -C "$workspace" rev-parse HEAD > /dev/null || { err "workspace is not a git checkout"; exit 2; }
   gh auth status > /dev/null 2>&1 || { err "gh is not authenticated"; exit 2; }
+  case "$provider" in
+    opencode|all)
+      [ -n "${OPENCODE_CONFORMANCE_MODEL:-}" ] \
+        || { err "set OPENCODE_CONFORMANCE_MODEL=provider/model"; exit 2; }
+      ;;
+  esac
   hier_base=""
   if want hierarchy; then
     hier_base="$(gh pr view "$pr" --repo "$repo" --json baseRefOid --jq .baseRefOid)" \
@@ -457,7 +543,8 @@ else
     claude) probe_claude ;;
     codex) probe_codex ;;
     cursor) probe_cursor ;;
-    all) probe_claude; probe_codex; probe_cursor ;;
+    opencode) probe_opencode ;;
+    all) probe_claude; probe_codex; probe_cursor; probe_opencode ;;
     *) usage ;;
   esac
 fi
