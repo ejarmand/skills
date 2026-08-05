@@ -49,7 +49,7 @@ Progressive disclosure keeps the top legible: push behind a **context pointer** 
 
 ## Leading words
 
-A **leading word** is a compact concept already in the model's pretraining that anchors a whole region of behaviour in one token (_lesson_, _fog of war_, _tracer bullets_). Repeat it as a token, never as a sentence; a coined word recruits no priors — reach for an existing one. In the body it anchors execution; in the description it anchors invocation — when the same word lives in your prompts, docs, and code, the skill fires more reliably. A triad spelled out at three sites, a description spending a sentence to gesture at one idea — each is a passage begging to collapse into a single word.
+A **leading word** is a compact concept already in the model's pretraining that anchors a whole region of behaviour in one token (_lesson_, _seam_, _tracer bullets_). Repeat it as a token, never as a sentence; a coined word recruits no priors — reach for an existing one. In the body it anchors execution; in the description it anchors invocation — when the same word lives in your prompts, docs, and code, the skill fires more reliably. A triad spelled out at three sites, a description spending a sentence to gesture at one idea — each is a passage begging to collapse into a single word.
 
 ## Pruning
 
