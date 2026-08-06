@@ -20,7 +20,7 @@ opencode auth list
 ```
 
 OpenCode accepts stored provider credentials and providers' conventional
-environment variables. Never print or copy credentials into prompts.
+environment variables.
 
 ## Start and monitor a worker
 
@@ -29,9 +29,6 @@ cd /absolute/path/to/workspace && \
   opencode run --format json --model provider/model "TASK"
 ```
 
-Do not add `--auto` merely to make a headless run unattended. OpenCode
-permissions guide tool use but are not an OS sandbox; use an external boundary
-when the task requires enforced isolation.
 
 Capture `sessionID` from the first JSON event. Resume the same session with
 `--session SESSION_ID`; add `--fork` when follow-up work must branch from it.
@@ -41,10 +38,7 @@ monitoring and termination.
 
 ## Profiled dispatch
 
-The `github-pr-reviewer` profile is supported on Linux with bubblewrap. The
-runner mounts your stored OpenCode provider credentials and `gh`
-authentication read-only, so `opencode auth login` and `gh auth login` are
-the only credential setup:
+For running limited opencode sessions based on particular profiles use 
 
 ```bash
 /absolute/path/to/opencode-agent/scripts/run-profiled.sh \
@@ -54,11 +48,8 @@ the only credential setup:
   -- "REVIEW_TASK"
 ```
 
-The runner gives the workspace and this repository's skills read-only mounts,
-keeps OpenCode state disposable, and suppresses project and external skill
-configuration. The selected model is also used by the profile's Standards and
-Spec children. The reviewer publishes its result directly with
-`gh pr comment`.
+
+Which combines bubblewrap and agent profiles.
 
 ### available profiles
 
