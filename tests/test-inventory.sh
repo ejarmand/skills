@@ -61,7 +61,6 @@ fi
 # The repo-root .claude-plugin/ is this repo's own plugin manifest (the
 # claude-agent profiled-dispatch skill transport), not an upstream artifact.
 if find "$REPO" -path "$REPO/.claude-plugin" -prune -o \
-  -path "$REPO/worktrees" -prune -o \
   \( -path '*/.claude-plugin/*' -o -path '*/deprecated/*' -o -path '*/in-progress/*' \) \
   -print -quit | grep -q .; then
   echo "error: upstream distribution-only paths were promoted." >&2

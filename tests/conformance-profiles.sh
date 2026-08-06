@@ -381,10 +381,9 @@ run_opencode() {
   jq -rs '
     if any(.[]; .type == "error" or .type == "session.error")
     then ("opencode stream contains an error event") | halt_error(1)
-    elif (([.[] | select(.type == "step_finish") |
-                    (.part.reason? // .reason? // "")] | last // "") != "stop")
+    elif (([.[] | select(.type == "step_finish") | (.part.reason // "")] | last // "") != "stop")
     then ("opencode stream has no final stop") | halt_error(1)
-    else [.[] | select(.type == "text") | (.part.text? // .text? // empty)]
+    else [.[] | select(.type == "text") | (.part.text // empty)]
          | join("")
          | if length == 0
            then ("opencode stream has no final text") | halt_error(1)

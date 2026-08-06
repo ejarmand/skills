@@ -23,13 +23,18 @@ cat > "$FAKE_BIN/opencode" <<'FAKE'
 exit 99
 FAKE
 
+cat > "$FAKE_BIN/gh" <<'FAKE'
+#!/usr/bin/env bash
+exit 99
+FAKE
+
 cat > "$FAKE_BIN/bwrap" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$BWRAP_ARGS"
 exit "${FAKE_BWRAP_EXIT:-0}"
 FAKE
 
-chmod +x "$FAKE_BIN/opencode" "$FAKE_BIN/bwrap" || exit 1
+chmod +x "$FAKE_BIN/opencode" "$FAKE_BIN/gh" "$FAKE_BIN/bwrap" || exit 1
 
 WS="$TMP/workspace"
 RUN_TMPDIR="$TMP/state"
@@ -87,11 +92,14 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 [ "$(jq -r '.agent.reviewer.permission.task.standards' "$PROFILE")" = allow ] \
   && [ "$(jq -r '.agent.reviewer.permission.task.spec' "$PROFILE")" = allow ] \
   && pass "reviewer can delegate both axes" || fail "review hierarchy is not enabled"
-[ "$(jq -r '.agent.standards.permission.task' "$PROFILE")" = deny ] \
-  && [ "$(jq -r '.agent.spec.permission.task' "$PROFILE")" = deny ] \
-  && pass "review children cannot recurse" || fail "review child recursion is enabled"
+[ "$(jq -r '.permission.task["*"]' "$PROFILE")" = deny ] \
+  && [ "$(jq '[.agent.standards, .agent.spec] | map(has("permission")) | any' "$PROFILE")" = false ] \
+  && pass "review children hold the shared read-only baseline" \
+  || fail "review children carry their own permission overrides"
 [ "$(jq -r '.agent.reviewer.permission.bash["gh pr comment *"]' "$PROFILE")" = allow ] \
-  && pass "reviewer can publish directly" || fail "profile lacks direct PR publication"
+  && [ "$(jq '.permission.bash | keys | map(startswith("gh pr comment")) | any' "$PROFILE")" = false ] \
+  && pass "publication authority is reviewer-only" \
+  || fail "publication authority leaks past the reviewer"
 
 # A failed child remains the result, and its state is still disposable.
 rm -f "$TMP/bwrap.args"
