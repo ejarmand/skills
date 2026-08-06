@@ -69,7 +69,23 @@ skills:
 ```bash
 tests/test-inventory.sh
 tests/test-link-skills.sh
+tests/test-check-requirements.sh
 ```
+
+## Check software requirements
+
+[`requirements.txt`](requirements.txt) is the loose, command-level software
+inventory shared across the skills. Check the current machine with:
+
+```bash
+scripts/check-requirements.sh
+```
+
+The checker lists every command as `installed` or `missing` and remains
+informational when software is absent. It does not validate versions,
+authentication, network access, browser bundles, model availability, or a
+target project's own toolchain. Pass another manifest path to inspect a custom
+requirement set.
 
 ## Provenance
 
