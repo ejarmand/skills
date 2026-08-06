@@ -1,5 +1,5 @@
 ---
-name: batch-subagents 
+name: batch-subagents
 description: Batch independent Codex/Luna CLI workers through one finite-concurrency shell invocation. Use when a parent should fan out many independent tasks without making one tool call per worker.
 ---
 

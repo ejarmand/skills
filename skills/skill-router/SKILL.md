@@ -68,7 +68,7 @@ Two model-invoked references that run *beneath* the other skills — each the si
 
 ## Cross-provider delivery
 
-- **`/batch-luna-agents`** — fan out many independent Codex/Luna workers
+- **`/batch-subagents`** — fan out many independent Codex/Luna workers
   through one finite-concurrency shell invocation.
 - **`/pr-ping-pong`** — rally an issue or PR between one continuing
   implementer and independent cross-provider reviewers until it passes or the
