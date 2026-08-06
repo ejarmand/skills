@@ -35,7 +35,7 @@ On top of whatever the repo documents, the Standards axis always carries the **u
 
 ### 4. Spawn both sub-agents in parallel
 
-Send a single message with two `Agent` tool calls. Use the `general-purpose` subagent for both.
+Send a single message with two subagents.
 
 **Standards sub-agent prompt** — include:
 

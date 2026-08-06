@@ -68,4 +68,4 @@ View the printed screenshot path. Re-run the block after changes, using the same
 
 Check accuracy, reading path, clipping or overlap, legibility, scrolling, contrast, and color-independent meaning. Fix the largest defect and re-screenshot. Stop when the visualization answers the target question with no meaningful defect.
 
-When done, close the browser session and remove the printed screenshot directory. Then put the validated file in front of the user: open it with the platform opener when one exists (`xdg-open` on Linux, `open` on macOS, `start` on Windows), and otherwise deliver the file through the harness's file-sharing mechanism. Report the HTML location, what you verified, and any known limitations.
+When done, close the browser session and remove the printed screenshot directory. Then report the HTML location, what you verified, and any known limitations.

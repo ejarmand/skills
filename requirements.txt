@@ -1,0 +1,20 @@
+# Loose, command-level requirements used across the skill collection.
+#
+# One executable name per line. Inline comments record the main consumers.
+# Presence does not prove a compatible version, authentication, network access,
+# browser availability, model access, or a target project's own toolchain.
+
+bash             # repository scripts and shell-driven skills
+claude           # claude-agent, cross-provider-agent, pr-ping-pong
+codex            # codex-agent, batch-luna-agents, cross-provider-agent, pr-ping-pong
+curl             # html-visualization
+cursor-agent     # cursor-agent, cross-provider-agent, pr-ping-pong
+gh               # GitHub work records, review, specification, ticket, and rally skills
+git              # implementation, review, prototype, and orchestration skills
+jq               # cursor-agent profiled runner
+md5sum           # cursor-agent profiled runner
+playwright-cli   # html-visualization, teach, improve-codebase-architecture
+python3          # html-visualization and fix-steering
+stat             # cursor-agent profiled runner; GNU-compatible options required
+uuidgen          # optional Claude session ID preallocation
+xargs            # batch-luna-agents; GNU-compatible parallel behavior required
