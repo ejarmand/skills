@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Run one OpenCode session inside a named bubblewrap authority profile.
 #
+# Stored OpenCode provider credentials (auth.json) and gh CLI authentication
+# are mounted read-only, so `opencode auth login` and `gh auth login` are the
+# only credential setup; OpenCode state is disposable.
+#
 # usage: run-profiled.sh --workspace /abs/path --profile NAME \
 #   --model PROVIDER/MODEL -- "PROMPT"
 
@@ -9,7 +13,6 @@ set -u -o pipefail
 EX_USAGE=2
 EX_CLEANUP=70
 EX_SETUP=71
-PINNED_OPENCODE=1.18.13
 
 err() { printf 'run-profiled: %s\n' "$*" >&2; }
 usage() {
@@ -50,21 +53,23 @@ profile_file="$skill_dir/profiles/$profile/config.json"
 command -v bwrap >/dev/null 2>&1 || { err 'bubblewrap is required'; exit "$EX_SETUP"; }
 opencode_bin="$(command -v opencode)" || { err 'opencode is required'; exit "$EX_SETUP"; }
 opencode_bin="$(readlink -f "$opencode_bin")" || { err 'cannot resolve opencode executable'; exit "$EX_SETUP"; }
-[ "$(opencode --version)" = "$PINNED_OPENCODE" ] \
-  || { err "profile requires OpenCode $PINNED_OPENCODE"; exit "$EX_SETUP"; }
 gh_bin="$(command -v gh)" || { err 'GitHub CLI is required'; exit "$EX_SETUP"; }
 gh_bin="$(readlink -f "$gh_bin")" || { err 'cannot resolve GitHub CLI executable'; exit "$EX_SETUP"; }
-if [ -z "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
-  err 'GH_TOKEN or GITHUB_TOKEN is required for profiled GitHub access'
-  exit "$EX_SETUP"
-fi
+
+auth_json="${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json"
+[ -f "$auth_json" ] \
+  || { err "no OpenCode provider credentials in $auth_json; run opencode auth login first"; exit "$EX_SETUP"; }
+gh_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}"
+[ -f "$gh_config/hosts.yml" ] \
+  || { err "no gh authentication in $gh_config; run gh auth login first"; exit "$EX_SETUP"; }
 
 config_json="$(< "$profile_file")" || { err 'cannot read profile config'; exit "$EX_SETUP"; }
 state_root="$(mktemp -d "${TMPDIR:-/tmp}/opencode-profile.XXXXXXXX")" \
   || { err 'cannot create disposable OpenCode state'; exit "$EX_SETUP"; }
 chmod 700 "$state_root" || { rm -rf "$state_root"; exit "$EX_SETUP"; }
-mkdir -p "$state_root"/{home,config,data,cache,xdg-state,tmp} \
+mkdir -p "$state_root"/{home,config/gh,data/opencode,cache,xdg-state,tmp} \
   || { rm -rf "$state_root"; exit "$EX_SETUP"; }
+touch "$state_root/data/opencode/auth.json" || { rm -rf "$state_root"; exit "$EX_SETUP"; }
 
 bwrap \
   --die-with-parent --new-session \
@@ -83,6 +88,8 @@ bwrap \
   --ro-bind "$workspace" /workspace \
   --ro-bind "$repo_skills" /skills \
   --bind "$state_root" /state \
+  --ro-bind "$auth_json" /state/data/opencode/auth.json \
+  --ro-bind "$gh_config" /state/config/gh \
   --chdir /workspace \
   --setenv PATH /opt:/usr/bin:/bin \
   --setenv HOME /state/home \

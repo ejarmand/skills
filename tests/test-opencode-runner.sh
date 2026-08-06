@@ -20,17 +20,12 @@ mkdir -p "$FAKE_BIN" || exit 1
 
 cat > "$FAKE_BIN/opencode" <<'FAKE'
 #!/usr/bin/env bash
-if [ "${1:-}" = --version ]; then
-  echo "${FAKE_OPENCODE_VERSION:-1.18.13}"
-  exit 0
-fi
 exit 99
 FAKE
 
 cat > "$FAKE_BIN/bwrap" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$BWRAP_ARGS"
-if [ -n "${GH_TOKEN:-}" ]; then echo set > "$BWRAP_GH_AUTH"; fi
 exit "${FAKE_BWRAP_EXIT:-0}"
 FAKE
 
@@ -38,11 +33,16 @@ chmod +x "$FAKE_BIN/opencode" "$FAKE_BIN/bwrap" || exit 1
 
 WS="$TMP/workspace"
 RUN_TMPDIR="$TMP/state"
-mkdir -p "$WS" "$RUN_TMPDIR" || exit 1
+FAKE_HOME="$TMP/home"
+FAKE_DATA="$TMP/data"
+mkdir -p "$WS" "$RUN_TMPDIR" "$FAKE_HOME/.config/gh" "$FAKE_DATA/opencode" || exit 1
+touch "$FAKE_HOME/.config/gh/hosts.yml" "$FAKE_DATA/opencode/auth.json" || exit 1
 
 run_runner() {
-  PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" GH_TOKEN=fake \
-    BWRAP_ARGS="$TMP/bwrap.args" BWRAP_GH_AUTH="$TMP/bwrap.gh-auth" \
+  env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR \
+    PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
+    HOME="$FAKE_HOME" XDG_DATA_HOME="$FAKE_DATA" \
+    BWRAP_ARGS="$TMP/bwrap.args" \
     "$RUNNER" "$@"
 }
 
@@ -67,8 +67,12 @@ grep -Fxq -- "review issue 18" "$TMP/bwrap.args" \
   && pass "runner forwards the prompt" || fail "prompt missing"
 [ "$(tail -n 2 "$TMP/bwrap.args" | head -n 1)" = -- ] \
   && pass "runner separates the prompt from OpenCode flags" || fail "prompt has no option boundary"
-[ -f "$TMP/bwrap.gh-auth" ] \
-  && pass "caller authentication remains available" || fail "caller environment was cleared"
+grep -Fxq -- "$FAKE_DATA/opencode/auth.json" "$TMP/bwrap.args" \
+  && grep -Fxq -- "/state/data/opencode/auth.json" "$TMP/bwrap.args" \
+  && pass "runner mounts stored provider credentials" || fail "provider credential mount missing"
+grep -Fxq -- "$FAKE_HOME/.config/gh" "$TMP/bwrap.args" \
+  && grep -Fxq -- "/state/config/gh" "$TMP/bwrap.args" \
+  && pass "runner mounts stored gh authentication" || fail "gh authentication mount missing"
 
 state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
 [ -n "$state_root" ] || fail "writable state bind missing"
@@ -99,25 +103,28 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "failed dispatch state is removed" || fail "failed dispatch left state: $state_root"
 
-# Mechanical prerequisites fail before bubblewrap is launched.
+# Missing stored credentials fail before bubblewrap is launched.
 rm -f "$TMP/bwrap.args"
 rc=0
-FAKE_OPENCODE_VERSION=1.18.12 run_runner --workspace "$WS" \
-  --profile github-pr-reviewer --model openrouter/example-model -- "task" \
-  >/dev/null 2>&1 || rc=$?
-[ "$rc" -eq 71 ] && [ ! -f "$TMP/bwrap.args" ] \
-  && pass "wrong OpenCode version is refused before launch" \
-  || fail "wrong-version refusal: rc=$rc launched=$([ -f "$TMP/bwrap.args" ] && echo yes || echo no)"
-
-rm -f "$TMP/bwrap.args"
-rc=0
-env -u GH_TOKEN -u GITHUB_TOKEN PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
-  BWRAP_ARGS="$TMP/bwrap.args" BWRAP_GH_AUTH="$TMP/bwrap.gh-auth" \
+env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
+  HOME="$FAKE_HOME" XDG_DATA_HOME="$TMP/no-such-data" \
+  BWRAP_ARGS="$TMP/bwrap.args" \
   "$RUNNER" --workspace "$WS" --profile github-pr-reviewer \
   --model openrouter/example-model -- "task" >/dev/null 2>&1 || rc=$?
 [ "$rc" -eq 71 ] && [ ! -f "$TMP/bwrap.args" ] \
-  && pass "missing GitHub environment authentication is refused" \
-  || fail "missing-auth refusal: rc=$rc launched=$([ -f "$TMP/bwrap.args" ] && echo yes || echo no)"
+  && pass "missing provider credentials are refused before launch" \
+  || fail "missing-credentials refusal: rc=$rc launched=$([ -f "$TMP/bwrap.args" ] && echo yes || echo no)"
+
+rm -f "$TMP/bwrap.args"
+rc=0
+env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
+  HOME="$TMP/no-gh-home" XDG_DATA_HOME="$FAKE_DATA" \
+  BWRAP_ARGS="$TMP/bwrap.args" \
+  "$RUNNER" --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 71 ] && [ ! -f "$TMP/bwrap.args" ] \
+  && pass "missing gh authentication is refused before launch" \
+  || fail "missing-gh-auth refusal: rc=$rc launched=$([ -f "$TMP/bwrap.args" ] && echo yes || echo no)"
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures failure(s)" >&2

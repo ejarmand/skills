@@ -31,8 +31,9 @@
 # CONFORMANCE_PROBES selects a comma-separated subset of
 # read,denied,recursion,hierarchy,comment (default: all) for cheaper
 # iteration; a partial run is not a conformance pass.
-# OpenCode probes also require OPENCODE_CONFORMANCE_MODEL=provider/model and
-# that provider's normal environment credentials.
+# OpenCode probes use OPENCODE_CONFORMANCE_MODEL=provider/model (default
+# opencode/deepseek-v4-flash) and the runner's stored provider and gh
+# credentials.
 #
 # Caveat: the denied-write probe instructs the child to *attempt* forbidden
 # operations and report raw errors. A child may refuse instead of attempting;
@@ -79,6 +80,7 @@ pass() { echo "ok: $*"; }
 
 PROBES="${CONFORMANCE_PROBES:-read,denied,recursion,hierarchy,comment}"
 want() { case ",$PROBES," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+OPENCODE_CONFORMANCE_MODEL="${OPENCODE_CONFORMANCE_MODEL:-opencode/deepseek-v4-flash}"
 
 # --- shared canaries and assertions ---------------------------------------
 
@@ -361,17 +363,8 @@ probe_codex() {
 }
 
 opencode_dispatch() {
-  local model="${OPENCODE_CONFORMANCE_MODEL:-}"
-  [ -n "$model" ] || { err "set OPENCODE_CONFORMANCE_MODEL=provider/model"; return 2; }
-  if [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
-    "$OPENCODE_RUNNER" --workspace "$workspace" --profile github-pr-reviewer \
-      --model "$model" -- "$1"
-  else
-    local token
-    token="$(gh auth token)" || { err "cannot obtain a GitHub token for OpenCode"; return 2; }
-    GH_TOKEN="$token" "$OPENCODE_RUNNER" --workspace "$workspace" \
-      --profile github-pr-reviewer --model "$model" -- "$1"
-  fi
+  "$OPENCODE_RUNNER" --workspace "$workspace" --profile github-pr-reviewer \
+    --model "$OPENCODE_CONFORMANCE_MODEL" -- "$1"
 }
 
 run_opencode() {
@@ -402,7 +395,7 @@ run_opencode() {
 }
 
 probe_opencode() {
-  echo "== opencode ($(opencode --version 2>/dev/null | head -n 1), ${OPENCODE_CONFORMANCE_MODEL:-model-unset}) =="
+  echo "== opencode ($(opencode --version 2>/dev/null | head -n 1), $OPENCODE_CONFORMANCE_MODEL) =="
   local marker="${OPENCODE_CONFORMANCE_MODEL%%/*} via OpenCode conformance-opencode-$$" out rc=0
   record_canaries
   if want read; then
@@ -526,12 +519,6 @@ else
   case "$workspace" in /*) ;; *) err "workspace must be absolute"; exit 2 ;; esac
   git -C "$workspace" rev-parse HEAD > /dev/null || { err "workspace is not a git checkout"; exit 2; }
   gh auth status > /dev/null 2>&1 || { err "gh is not authenticated"; exit 2; }
-  case "$provider" in
-    opencode|all)
-      [ -n "${OPENCODE_CONFORMANCE_MODEL:-}" ] \
-        || { err "set OPENCODE_CONFORMANCE_MODEL=provider/model"; exit 2; }
-      ;;
-  esac
   hier_base=""
   if want hierarchy; then
     hier_base="$(gh pr view "$pr" --repo "$repo" --json baseRefOid --jq .baseRefOid)" \

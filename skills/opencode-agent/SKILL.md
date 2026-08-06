@@ -41,15 +41,16 @@ monitoring and termination.
 
 ## Profiled dispatch
 
-The `github-pr-reviewer` profile is supported on Linux with OpenCode 1.18.13
-and bubblewrap. Supply provider and GitHub credentials through their normal
-environment variables:
+The `github-pr-reviewer` profile is supported on Linux with bubblewrap. The
+runner mounts your stored OpenCode provider credentials and `gh`
+authentication read-only, so `opencode auth login` and `gh auth login` are
+the only credential setup:
 
 ```bash
 /absolute/path/to/opencode-agent/scripts/run-profiled.sh \
   --workspace /absolute/path/to/workspace \
   --profile github-pr-reviewer \
-  --model provider/model \
+  --model opencode/deepseek-v4-flash \
   -- "REVIEW_TASK"
 ```
 
