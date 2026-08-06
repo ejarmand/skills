@@ -37,7 +37,7 @@ maps the complete collection.
 
 ### Agent and review orchestration
 
-- `batch-luna-agents` — fan out independent Luna workers in one shell call
+- `batch-subagents` — fan out independent Codex/Luna workers in one shell call
 - `claude-agent` — execute and resume independent headless Claude Code work
 - `codex-agent` — execute and resume independent Codex CLI work
 - `cursor-agent` — execute and resume independent Cursor Agent work

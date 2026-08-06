@@ -1,4 +1,4 @@
 interface:
-  display_name: "Batch Luna Agents"
-  short_description: "Fan out Luna workers in one shell call"
-  default_prompt: "Use $batch-luna-agents to fan out these independent tasks through one bounded shell pool."
+  display_name: "Batch Subagents"
+  short_description: "Fan out Codex/Luna workers in one shell call"
+  default_prompt: "Use $batch-subagents to fan out these independent tasks through one bounded shell pool."
