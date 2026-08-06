@@ -41,6 +41,7 @@ maps the complete collection.
 - `claude-agent` — execute and resume independent headless Claude Code work
 - `codex-agent` — execute and resume independent Codex CLI work
 - `cursor-agent` — execute and resume independent Cursor Agent work
+- `opencode-agent` — execute OpenCode workers across model providers
 - `cross-provider-agent` — dispatch one bounded task to an external provider
   under least authority, with named authority profiles
 - `pr-ping-pong` — rally implementation against cross-provider reviewers

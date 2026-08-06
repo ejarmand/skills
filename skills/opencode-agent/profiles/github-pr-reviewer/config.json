@@ -1,0 +1,75 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "share": "disabled",
+  "subagent_depth": 1,
+  "skills": {
+    "paths": ["/skills/code-review"]
+  },
+  "permission": {
+    "*": "deny",
+    "read": { "*": "allow" },
+    "list": { "*": "allow" },
+    "glob": { "*": "allow" },
+    "grep": { "*": "allow" },
+    "external_directory": { "*": "deny", "/skills/*": "allow" },
+    "skill": { "*": "deny" },
+    "edit": "deny",
+    "bash": {
+      "*": "deny",
+      "cd": "allow",
+      "cd *": "allow",
+      "git diff": "allow",
+      "git diff *": "allow",
+      "git log": "allow",
+      "git log *": "allow",
+      "git show": "allow",
+      "git show *": "allow",
+      "git status": "allow",
+      "git status *": "allow",
+      "rg": "allow",
+      "rg *": "allow",
+      "grep": "allow",
+      "grep *": "allow",
+      "ls": "allow",
+      "ls *": "allow",
+      "head": "allow",
+      "head *": "allow",
+      "cat": "allow",
+      "cat *": "allow",
+      "wc": "allow",
+      "wc *": "allow",
+      "gh issue view": "allow",
+      "gh issue view *": "allow",
+      "gh pr view": "allow",
+      "gh pr view *": "allow",
+      "gh pr diff": "allow",
+      "gh pr diff *": "allow"
+    },
+    "task": { "*": "deny" }
+  },
+  "agent": {
+    "reviewer": {
+      "mode": "primary",
+      "description": "Coordinate a two-axis GitHub review and publish it.",
+      "prompt": "You are a coordinator under the github-pr-reviewer authority contract. Read the prepared workspace and the tagged GitHub issue and PR. When asked for a two-axis review, invoke the code-review skill and use the standards and spec agents. Your only write is one requested top-level PR comment with gh pr comment; open its body by naming the selected model provider. Make no other change.",
+      "permission": {
+        "skill": { "code-review": "allow" },
+        "bash": {
+          "gh pr comment": "allow",
+          "gh pr comment *": "allow"
+        },
+        "task": { "standards": "allow", "spec": "allow" }
+      }
+    },
+    "standards": {
+      "mode": "subagent",
+      "description": "Review the diff against repository and unified code standards.",
+      "prompt": "Review only the Standards axis requested by the coordinator. Read the supplied diff and standards, report concrete findings with file and rule citations, and return the report to the coordinator. Do not publish."
+    },
+    "spec": {
+      "mode": "subagent",
+      "description": "Review the diff against its originating issue or specification.",
+      "prompt": "Review only the Spec axis requested by the coordinator. Compare the supplied diff with the originating issue or specification, report missing, incorrect, or unrequested behavior with citations, and return the report to the coordinator. Do not publish."
+    }
+  }
+}
