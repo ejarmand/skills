@@ -1,13 +1,13 @@
 ---
 name: cross-provider-agent
-description: Dispatch a bounded task to a Claude, Codex, or Cursor CLI agent with least authority. Use for independent reviews, named authority profiles, or external-provider subagents.
+description: Dispatch a bounded task to a Claude, Codex, Cursor, or OpenCode CLI agent with least authority. Use for independent reviews, named authority profiles, or external-provider subagents.
 ---
 
 # Cross-Provider Agent
 
 Choose the backend and authority profile here. Delegate authentication,
 invocation, sessions, monitoring, and provider quirks to `/claude-agent`,
-`/codex-agent`, or `/cursor-agent`.
+`/codex-agent`, `/cursor-agent`, or `/opencode-agent`.
 
 ## Choose the backend
 
@@ -15,6 +15,9 @@ invocation, sessions, monitoring, and provider quirks to `/claude-agent`,
 2. Otherwise, any installed, authenticated backend.
 3. When independence matters — reviewing or judging work — exclude the
    provider that produced the work.
+
+OpenCode is model-parameterized: apply the independence rule to the selected
+model's provider, not to the OpenCode harness.
 
 ## Authority profiles
 
