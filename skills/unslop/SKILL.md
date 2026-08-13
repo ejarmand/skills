@@ -5,16 +5,16 @@ description: Cut AI tells from any writing. Must always apply.
 
 # Unslop
 
-Edit text to remove AI patterns and improve legibility. 
+Edit text to remove AI patterns and improve legibility.
 
 ## Process
 
 1. Scan for the patterns below.
 2. Rewrite. Preserve meaning, match intended tone.
-3. Talk normally  
+3. Talk normally
 4. Self-audit: "What makes this obviously AI generated?" Fix remaining tells.
 
-## Talk normally 
+## Talk normally
 
 Removing patterns is half the job. Sterile, voiceless writing is just as obvious.
 
