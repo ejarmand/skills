@@ -32,6 +32,8 @@ maps the complete collection.
 ### Teaching and visualization
 
 - `teach` — run a stateful learning workspace
+- `bro` — restate the last response in plain, concise language
+- `unslop` — remove AI writing patterns and improve legibility
 - `writing-great-skills` — reference for authoring and editing skills
 - `html-visualization` — render, screenshot, and critique browser-based reports
 
