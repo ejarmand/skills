@@ -6,8 +6,9 @@ disable-model-invocation: true
 
 # PR Ping Pong
 
-Alternate an implementation agent against reviewers from *other* providers until
-the change is review-clean or the rally budget runs out.
+Alternate an implementation agent against two reviewers from other model
+providers plus the bonus roster until the change is review-clean or the rally
+budget runs out.
 
 **A reviewer must never share a session with the agent that wrote the code under
 review.** Agents catch defects in code they did not write far more reliably than
@@ -26,14 +27,40 @@ Resolve from the request, then state the resolved set before starting.
 |---|---|
 | target | required — issue or PR number, or URL |
 | implementer | `native subagent` |
-| reviewers | every installed external provider except the implementer's |
+| reviewers | the default pair and bonus roster below |
 | max rallies | `3` |
 | merge on pass | `false` |
 | new PR worktree | `REPO_ROOT/worktrees/[branch]` |
 
-Honor explicit provider overrides. Refuse a reviewer set that would review its
-own implementation session, and explain why. Provider separation is the
-invariant; the exact model is not.
+Honor explicit reviewer overrides. Never let a reviewer share the implementation
+session.
+
+## Defaults
+
+Run the two default adversarial reviewers and every bonus reviewer on each
+rally. Select the default pair by the provider that produced the implementation,
+not by the CLI that carried it.
+
+| Implementer model provider | Default reviewer 1 | Default reviewer 2 |
+|---|---|---|
+| OpenAI | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
+| Cursor/SpaceXAI Grok | GPT-5.6 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
+| Any other provider | GPT-5.6 Sol through Codex (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
+
+| Bonus model | Transport | Effort |
+|---|---|---|
+| GPT-5.6 Luna | Codex | `xhigh` |
+| Muse Spark 1.3 Contributor Free | OpenCode Zen | `high` |
+| GLM 5.3 Flash | OpenCode through OpenRouter | `high` |
+
+Combine the tables and deduplicate identical reviewer models. Do not remove a
+bonus because its provider or model matches the implementer; give it a fresh
+session. Muse is enabled by default. Its Contributor Free endpoint permits the
+use of prompts and completions to train future Meta models.
+
+Use subscription-backed native CLIs for OpenAI, Anthropic, and Cursor models.
+Use OpenCode for Muse and GLM. Do not select Fable or Opus unless the user asks
+for them directly.
 
 ## Preflight
 
@@ -95,7 +122,7 @@ prompt as `git diff BASE_OID...HEAD_OID`.
 
 ### 3. Review
 
-Each reviewer provider runs **one fresh review coordinator per rally**,
+Each selected reviewer model runs **one fresh review coordinator per rally**,
 dispatched through `/cross-provider-agent` under the `github-pr-reviewer`
 profile with the absolute `checkout`. The coordinator invokes `/code-review`
 — the single copy of the review contract — which spawns its two
@@ -106,12 +133,12 @@ authority. On top of that, each coordinator's prompt sets:
 - the tagged issue or PR as the spec source, fetched through the profile's
   `gh` reads;
 - publication: aggregate both axis reports into one top-level PR comment
-  whose first line is `<provider> / rally <n> / <head OID>`.
+  whose first line is `<model> / rally <n> / <head OID>`.
 
-Coordinators from different providers must not share `checkout` at the same
-time — the Cursor runner stages workspace config that trips another
-dispatch's clean-tree verification. Run providers sequentially, or pin one
-checkout per provider. After they finish, read the posted comments back;
+Reviewer coordinators must not share `checkout` at the same time when one uses
+Cursor — its runner stages workspace config that trips another dispatch's
+clean-tree verification. Run reviewers sequentially, or pin one checkout per
+reviewer. After they finish, read the posted comments back;
 they are the adjudication input.
 
 ### 4. Adjudicate findings
@@ -145,7 +172,7 @@ leave the PR unmerged and say why in the report.
 
 ## Report
 
-Close with a rally table — per rally, the base and head SHAs, each provider
+Close with a rally table — per rally, the base and head SHAs, each model
 review's outcome, findings accepted and rejected — then the final state,
 surviving non-blocking findings, the merge outcome or why it was skipped, and
 the PR URL. Report the implementer's session ID so the user can resume it. For
