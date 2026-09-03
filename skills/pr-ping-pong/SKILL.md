@@ -35,32 +35,6 @@ Resolve from the request, then state the resolved set before starting.
 Honor explicit reviewer overrides. Never let a reviewer share the implementation
 session.
 
-## Defaults
-
-Run the two default adversarial reviewers and every bonus reviewer on each
-rally. Select the default pair by the provider that produced the implementation,
-not by the CLI that carried it.
-
-| Implementer model provider | Default reviewer 1 | Default reviewer 2 |
-|---|---|---|
-| OpenAI | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
-| Cursor/SpaceXAI Grok | GPT-5.6 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
-| Any other provider | GPT-5.6 Sol through Codex (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
-
-| Bonus model | Transport | Effort |
-|---|---|---|
-| GPT-5.6 Luna | Codex | `xhigh` |
-| Muse Spark 1.3 Contributor Free | OpenCode Zen | `high` |
-| GLM 5.3 Flash | OpenCode through OpenRouter | `high` |
-
-Combine the tables and deduplicate identical reviewer models. Do not remove a
-bonus because its provider or model matches the implementer; give it a fresh
-session. Muse is enabled by default. Its Contributor Free endpoint permits the
-use of prompts and completions to train future Meta models.
-
-Use subscription-backed native CLIs for OpenAI, Anthropic, and Cursor models.
-Use OpenCode for Muse and GLM. Do not select Fable or Opus unless the user asks
-for them directly.
 
 ## Preflight
 
@@ -124,34 +98,54 @@ prompt as `git diff BASE_OID...HEAD_OID`.
 
 Each selected reviewer model runs **one fresh review coordinator per rally**,
 dispatched through `/cross-provider-agent` under the `github-pr-reviewer`
-profile with the absolute `checkout`. The coordinator invokes `/code-review`
-— the single copy of the review contract — which spawns its two
+profile with the absolute `checkout`. The coordinator invokes `/code-review`which spawns its two
 context-isolated native children (Standards, Spec) inside the profile's
-authority. On top of that, each coordinator's prompt sets:
+authority. On top of that, each coordinator's prompt includes:
 
-- the pinned `git diff BASE_OID...HEAD_OID` as the fixed point;
 - the tagged issue or PR as the spec source, fetched through the profile's
   `gh` reads;
 - publication: aggregate both axis reports into one top-level PR comment
   whose first line is `<model> / rally <n> / <head OID>`.
+- path to local checkout/worktree
 
-Reviewer coordinators must not share `checkout` at the same time when one uses
-Cursor — its runner stages workspace config that trips another dispatch's
-clean-tree verification. Run reviewers sequentially, or pin one checkout per
-reviewer. After they finish, read the posted comments back;
-they are the adjudication input.
+
+* note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
+clean-tree verification. When using it run reviewers sequentially, or pin one checkout per
+reviewer.
+
+#### review agent defaults
+
+Run the two default adversarial reviewers and every free reviewer on each
+rally.
+
+| Implementer model provider | Default reviewer 1 | Default reviewer 2 |
+|---|---|---|
+| OpenAI | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
+| Cursor/SpaceXAI Grok | GPT-5.6 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
+| Any other provider | GPT-5.6 Sol through Codex (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
+
+| Free model | Transport | Effort |
+|---|---|---|
+| GPT-5.6 Luna | Codex | `xhigh` |
+| Muse Spark 1.3 Contributor Free | OpenCode Zen | `high` |
+| GLM 5.3 Flash | OpenCode through OpenRouter | `high` |
+
+Free reviewers should  be used even if they duplicate the implementer, just use a fresh context.
+
+Use subscription-backed native CLIs for OpenAI, Anthropic, and Cursor models.
+Use OpenCode for Muse and GLM. Do not select Fable or Opus unless the user asks
+for them directly.
 
 ### 4. Adjudicate findings
 
 Reviewers are wrong sometimes, and an implementer that obeys every finding will
-churn or regress. Adjudicate each blocking finding against the code:
+churn or regress. Read the reviewers comments to adjudicate findings against the code:
 
 - **Accept** — real defect. Goes to the implementer as must-fix.
 - **Reject** — wrong, out of scope, or a style preference. Post a brief reply on
   the PR saying which finding and why.
 
-Where reviewers disagree, decide on the code and record the reasoning rather
-than deferring to whichever spoke last.
+Where reviewers disagree, use your judgement 
 
 ## Stopping
 
