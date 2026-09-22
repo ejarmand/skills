@@ -4,20 +4,20 @@ description: Dispatch a bounded task to a Claude, Codex, Cursor, or OpenCode CLI
 ---
 
 # Cross-Provider Agent
+Use a subagent through a cli. Per cli invocations are under skills:
 
-Choose the backend and authority profile here. Delegate authentication,
-invocation, sessions, monitoring, and provider quirks to `/claude-agent`,
-`/codex-agent`, `/cursor-agent`, or `/opencode-agent`.
+ `/claude-agent`
+ `/codex-agent`
+ `/cursor-agent`
+ `/opencode-agent`
 
-## Choose the backend
+## Choosing harness/model provider
 
-1. A user override wins.
-2. Otherwise, any installed, authenticated backend.
-3. When independence matters — reviewing or judging work — exclude the
-   provider that produced the work.
-
-OpenCode is model-parameterized: apply the independence rule to the selected
-model's provider, not to the OpenCode harness.
+ 1. For models with a particular provider plan, always use their native harness and subsidized plan
+    - e.g. codex - gpt models, claude code - anthropic models, cursor - grok models
+ 2. Deffering to 1 or user instructions, prefer spwaning subagents using the harnesses own subagent tool
+ 3. When independence matters (e.g. reviewing or judging work) exclude the
+   model provider that produced the work.
 
 ## Authority profiles
 
