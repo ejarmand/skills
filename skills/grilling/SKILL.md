@@ -20,3 +20,8 @@ Rules of thumb:
 - Questions should address exactly one concern
 - If a *fact* can be found by exploring the environment (filesystem, tools, etc.), look it up rather than asking me.
 - Do not act on it until I confirm we have reached a shared understanding.
+
+# user shorthands
+y - yes/agree
+n - no/disagree
+dc - don't care, I think this decision isn't super important
