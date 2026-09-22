@@ -151,12 +151,10 @@ Where reviewers disagree, use your judgement
 
 Stop and report at the first of these:
 
-1. **Pass** — no accepted blocking finding outstanding after adjudication.
+1. **Pass** — Meaningful findings after adjudication.
 2. **Budget** — rally cap reached. Report the surviving findings.
 3. **Failure** — an implementer errors, cannot proceed, or the branch stops
    building. Report the state; do not burn rallies on a broken tree.
-
-Non-blocking findings never justify another rally. Carry them into the summary.
 
 ## Merge
 
