@@ -131,7 +131,7 @@ rally.
 |---|---|---|
 | OpenAI | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
 | Cursor/SpaceXAI Grok | GPT-6 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
-| Any other provider | GPT-6 Sol through Codex (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
+| Any other provider | GPT-6 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
 
 | Free model | Transport | Effort |
 |---|---|---|
