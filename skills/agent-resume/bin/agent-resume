@@ -140,10 +140,11 @@ def deliver_claude(session, message, env, dry_run):
     return subprocess.run(resume, cwd=cwd, env=env, stdin=subprocess.DEVNULL).returncode
 
 
-def codex_resume_command(session, message):
+def codex_resume_command(session, message, env):
     """`codex exec resume` replaying the rollout's last turn_context policy, plus its cwd."""
     context = {}
-    for rollout in (HOME / ".codex/sessions").glob(f"**/rollout-*{session}.jsonl"):
+    sessions = Path(env.get("CODEX_HOME") or HOME / ".codex") / "sessions"
+    for rollout in sessions.glob(f"**/rollout-*{session}.jsonl"):
         try:
             with open(rollout, errors="replace") as lines:
                 for line in lines:
@@ -163,7 +164,7 @@ def codex_resume_command(session, message):
     if not isinstance(sandbox, dict):
         sandbox = {}
     if not isinstance(approval, str) or sandbox.get("type") not in CODEX_SANDBOXES:
-        print(f"agent-resume: no readable approval policy for {session}; "
+        print(f"agent-resume: no readable approval policy for {session} under {sessions}; "
               "resuming with --approve-for-me", file=sys.stderr)
         flags = ["--approve-for-me"]
     elif approval == "never" and sandbox["type"] == "danger-full-access":
@@ -178,7 +179,7 @@ def codex_resume_command(session, message):
 
 
 def deliver_codex(session, message, env, dry_run):
-    resume, cwd = codex_resume_command(session, message)
+    resume, cwd = codex_resume_command(session, message, env)
     # clap reads `--message -x` as a flag; the `=` form keeps a leading dash.
     queue = ["codex", "queue", "--thread", session, f"--message={message}"]
     if dry_run:
@@ -237,7 +238,7 @@ def schedule(args, command):
         print(shlex.join(run))
         message = args.message if args.time else completion_message(
             args.message, command, "exited with status <status>", "<log tail>", log)
-        return DELIVER[args.action](session, message, None, dry_run=True)
+        return DELIVER[args.action](session, message, os.environ, dry_run=True)
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     spec = STATE / f"{unit}.json"
     with open(os.open(spec, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as out:

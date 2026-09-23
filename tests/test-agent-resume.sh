@@ -65,7 +65,7 @@ FAKE
 chmod +x "$FAKE_BIN"/* || exit 1
 
 ar() { # ar <command...>: run in $AR_CWD (default $WS) with the fake HOME and PATH
-  (cd "${AR_CWD:-$WS}" && env -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID \
+  (cd "${AR_CWD:-$WS}" && env -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u CODEX_HOME \
     HOME="$FAKE_HOME" PATH="$FAKE_BIN:$PATH" CALLS="$CALLS" "$@")
 }
 reset_calls() { rm -f "$CALLS"/*; }
@@ -150,13 +150,14 @@ transcript ""
 check "transcript without a mode falls back to auto mode" \
   grep -Fq -- "--bg --permission-mode auto -- m" <<< "$(claude_plan)"
 
-rollout() { # rollout <approval-json> <sandbox-json>
-  mkdir -p "$FAKE_HOME/.codex/sessions/2026/09/22" || exit 1
+rollout() { # rollout <approval-json> <sandbox-json> [codex-home]
+  local day="${3:-$FAKE_HOME/.codex}/sessions/2026/09/22"
+  mkdir -p "$day" || exit 1
   printf '%s\n' \
     "{\"type\":\"session_meta\",\"payload\":{\"id\":\"$SID\"}}" \
     "{\"type\":\"turn_context\",\"payload\":{\"cwd\":\"/first\",\"approval_policy\":\"untrusted\",\"sandbox_policy\":{\"type\":\"read-only\"}}}" \
     "{\"type\":\"turn_context\",\"payload\":{\"cwd\":\"$WS\",\"approval_policy\":$1,\"sandbox_policy\":$2}}" \
-    > "$FAKE_HOME/.codex/sessions/2026/09/22/rollout-2026-09-22T00-00-00-$SID.jsonl"
+    > "$day/rollout-2026-09-22T00-00-00-$SID.jsonl"
 }
 codex_plan() { ar "$CLI" codex "$SID" --time 1h --message m --dry-run 2>/dev/null | grep '^deliver:'; }
 
@@ -229,6 +230,21 @@ check "an unreadable rollout still delivers with --approve-for-me" \
   called codex "--approve-for-me resume $SID -- still here"
 check "an unreadable rollout is logged" grep -Fq 'unreadable rollout' "$STATE/$unit.log"
 rm -rf "$FAKE_HOME/.codex"
+
+# Codex keeps rollouts under $CODEX_HOME when it is set. When the trigger fires,
+# that is the caller's CODEX_HOME saved with the trigger, not the unit's own.
+codex_home="$TMP/codex-home"
+rollout '"on-request"' '{"type":"workspace-write"}' "$codex_home"
+out="$(ar env CODEX_HOME="$codex_home" "$CLI" codex "$SID" --time 1h --message m --dry-run 2>/dev/null)"
+check "dry-run finds a rollout under CODEX_HOME" \
+  grep -Fq -- "-s workspace-write -c 'approval_policy=\"on-request\"' resume" <<< "$out"
+reset_calls
+unit="$(ar env CODEX_HOME="$codex_home" FAKE_SYSTEMD_EXEC=0 \
+  "$CLI" codex "$SID" --time 1s --message 'custom home' 2>&1)"
+AR_CWD="$FAKE_HOME" ar "$CLI" _fire "$unit" >> "$STATE/$unit.log" 2>&1
+check "firing finds the rollout under the caller's saved CODEX_HOME" \
+  called codex "-s workspace-write -c approval_policy=\"on-request\" resume $SID -- custom home"
+rm -rf "$codex_home"
 
 # The scheduling directory can vanish before the trigger fires, e.g. a removed
 # worktree. The unit does not run there, so the message still goes out.
