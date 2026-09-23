@@ -70,6 +70,11 @@ grep -Fxq -- "openrouter/example-model" "$TMP/bwrap.args" \
   && pass "runner selects the requested model" || fail "model missing"
 grep -Fxq -- "review issue 18" "$TMP/bwrap.args" \
   && pass "runner forwards the prompt" || fail "prompt missing"
+if grep -Fxq -- "--variant" "$TMP/bwrap.args"; then
+  fail "runner adds a variant when none was requested"
+else
+  pass "runner leaves the model's default variant alone"
+fi
 [ "$(tail -n 2 "$TMP/bwrap.args" | head -n 1)" = -- ] \
   && pass "runner separates the prompt from OpenCode flags" || fail "prompt has no option boundary"
 grep -Fxq -- "$FAKE_DATA/opencode/auth.json" "$TMP/bwrap.args" \
@@ -83,6 +88,17 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 [ -n "$state_root" ] || fail "writable state bind missing"
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "disposable state removed after dispatch" || fail "state was not cleaned up: $state_root"
+
+# The requested model variant reaches OpenCode as an argument, not prompt text.
+rm -f "$TMP/bwrap.args"
+rc=0
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model --variant high -- "review issue 18" || rc=$?
+[ "$rc" -eq 0 ] || fail "variant dispatch exited $rc (want 0)"
+awk 'previous == "--variant" && $0 == "high" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
+  && pass "runner forwards the requested model variant" || fail "model variant missing"
+[ "$(tail -n 2 "$TMP/bwrap.args" | head -n 1)" = -- ] \
+  && pass "variant stays before the prompt boundary" || fail "variant reached the prompt"
 
 # The profile carries one reviewer identity across the complete hierarchy.
 [ "$(jq -r '.agent | keys | sort | join(",")' "$PROFILE")" = "reviewer,spec,standards" ] \

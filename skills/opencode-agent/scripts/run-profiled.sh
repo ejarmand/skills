@@ -6,7 +6,7 @@
 # only credential setup; OpenCode state is disposable.
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME \
-#   --model PROVIDER/MODEL -- "PROMPT"
+#   --model PROVIDER/MODEL [--variant NAME] -- "PROMPT"
 
 set -u -o pipefail
 
@@ -16,18 +16,20 @@ EX_SETUP=71
 
 err() { printf 'run-profiled: %s\n' "$*" >&2; }
 usage() {
-  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL -- "PROMPT"'
+  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL [--variant NAME] -- "PROMPT"'
   exit "$EX_USAGE"
 }
 
 workspace=""
 profile=""
 model=""
+variant=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --workspace) [ $# -ge 2 ] || usage; workspace="$2"; shift 2 ;;
     --profile)   [ $# -ge 2 ] || usage; profile="$2"; shift 2 ;;
     --model)     [ $# -ge 2 ] || usage; model="$2"; shift 2 ;;
+    --variant)   [ $# -ge 2 ] && [ -n "$2" ] || usage; variant="$2"; shift 2 ;;
     --) shift; break ;;
     -h|--help) usage ;;
     *) usage ;;
@@ -71,6 +73,12 @@ mkdir -p "$state_root"/{home,config/gh,data/opencode,cache,xdg-state,tmp} \
   || { rm -rf "$state_root"; exit "$EX_SETUP"; }
 touch "$state_root/data/opencode/auth.json" || { rm -rf "$state_root"; exit "$EX_SETUP"; }
 
+if [ -n "$variant" ]; then
+  set -- --variant "$variant"
+else
+  set --
+fi
+
 bwrap \
   --die-with-parent --new-session \
   --unshare-all --unshare-user --share-net --disable-userns \
@@ -105,7 +113,7 @@ bwrap \
   --setenv OPENCODE_DISABLE_EXTERNAL_SKILLS 1 \
   --setenv OPENCODE_PURE 1 \
   --setenv OPENCODE_CONFIG_CONTENT "$config_json" \
-  /opt/opencode run --pure --format json --agent reviewer --model "$model" -- "$prompt"
+  /opt/opencode run --pure --format json --agent reviewer --model "$model" "$@" -- "$prompt"
 child_exit=$?
 
 if ! rm -rf "$state_root"; then

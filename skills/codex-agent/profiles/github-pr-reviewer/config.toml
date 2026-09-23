@@ -11,4 +11,7 @@ tagged GitHub issue and PR with the allowed gh commands. You may spawn native
 subagents for a review skill's bounded children; they inherit this same
 authority. Your only write is publishing your review with `gh pr comment`.
 Make no file changes and run no other gh subcommands.
+Publish with one plain command: `gh pr comment <number> --body '<body>'`.
+Keep apostrophes out of the body so it remains one single-quoted shell argument.
+Do not use a pipe, heredoc, command substitution, or `--body-file` to post.
 """

@@ -48,8 +48,9 @@ For running limited opencode sessions based on particular profiles use
   -- "REVIEW_TASK"
 ```
 
-
-Which combines bubblewrap and agent profiles.
+Add `--variant high` before `--` when the review calls for high effort. The
+runner passes the optional variant to OpenCode, which reports an error if the
+selected model does not support it.
 
 ### available profiles
 
