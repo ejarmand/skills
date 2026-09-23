@@ -52,7 +52,10 @@ def claude_live_socket(session):
         except PermissionError:
             pass
         key = entry.parent / f"{info['pid']}.{hashlib.sha256(sock.encode()).hexdigest()}.key"
-        token = json.loads(key.read_text())["peerToken"] if key.exists() else None
+        try:
+            token = json.loads(key.read_text())["peerToken"]
+        except (OSError, ValueError, KeyError, TypeError):
+            token = None
         return sock, token
     return None
 
@@ -61,16 +64,21 @@ def claude_resume_command(session, message):
     """`claude --resume --bg` replaying the transcript's last permission mode, plus its cwd."""
     mode = cwd = None
     for transcript in (HOME / ".claude/projects").glob(f"*/{session}.jsonl"):
-        with open(transcript, errors="replace") as lines:
-            for line in lines:
-                if '"cwd"' not in line and '"permissionMode"' not in line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                mode = record.get("permissionMode", mode)
-                cwd = record.get("cwd", cwd)
+        try:
+            with open(transcript, errors="replace") as lines:
+                for line in lines:
+                    if '"cwd"' not in line and '"permissionMode"' not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    mode = record.get("permissionMode", mode)
+                    cwd = record.get("cwd", cwd)
+        except OSError as error:
+            print(f"agent-resume: unreadable transcript, so no permission mode: {error}",
+                  file=sys.stderr)
+            mode = cwd = None
     if mode is None or mode == "bypassPermissions":
         flags = ["--dangerously-skip-permissions"]
     elif mode == "default":
@@ -99,8 +107,8 @@ def post_to_socket(path, token, message):
 
 def deliver_claude(session, message, env, dry_run):
     live = claude_live_socket(session)
-    resume, cwd = claude_resume_command(session, message)
     if dry_run:
+        resume, cwd = claude_resume_command(session, message)
         print(f"deliver: post to live socket {live[0]}" if live else
               f"deliver: no live socket for {session} (checked again when the trigger fires)")
         print(f"fallback: (cd {shlex.quote(cwd or '.')} && {shlex.join(resume)})")
@@ -112,6 +120,7 @@ def deliver_claude(session, message, env, dry_run):
             return 0
         except OSError as error:
             print(f"agent-resume: {live[0]}: {error}; resuming instead", file=sys.stderr)
+    resume, cwd = claude_resume_command(session, message)
     print(f"agent-resume: {shlex.join(resume[:-1])} <message>", flush=True)
     return subprocess.run(resume, cwd=cwd, env=env, stdin=subprocess.DEVNULL).returncode
 
@@ -120,18 +129,25 @@ def codex_resume_command(session, message):
     """`codex exec resume` replaying the rollout's last turn_context policy, plus its cwd."""
     context = {}
     for rollout in (HOME / ".codex/sessions").glob(f"**/rollout-*{session}.jsonl"):
-        with open(rollout, errors="replace") as lines:
-            for line in lines:
-                if '"turn_context"' not in line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                if record.get("type") == "turn_context":
-                    context = record["payload"]
+        try:
+            with open(rollout, errors="replace") as lines:
+                for line in lines:
+                    if '"turn_context"' not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if record.get("type") == "turn_context" and isinstance(record.get("payload"), dict):
+                        context = record["payload"]
+        except OSError as error:
+            print(f"agent-resume: unreadable rollout, so no approval policy: {error}",
+                  file=sys.stderr)
+            context = {}
     approval = context.get("approval_policy")
-    sandbox = context.get("sandbox_policy") or {}
+    sandbox = context.get("sandbox_policy")
+    if not isinstance(sandbox, dict):
+        sandbox = {}
     if (not isinstance(approval, str) or sandbox.get("type") not in CODEX_SANDBOXES
             or (approval == "never" and sandbox["type"] == "danger-full-access")):
         flags = ["--dangerously-bypass-approvals-and-sandbox"]

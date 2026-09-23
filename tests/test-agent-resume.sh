@@ -212,6 +212,15 @@ unit="$(ar "$CLI" codex "$SID" --message 'missing' -- /nonexistent/command 2>&1)
 check "a command that cannot start still delivers" \
   grep -Fq '`/nonexistent/command` could not start.' "$CALLS/codex.last"
 
+# A directory where a file should be is unreadable even to root.
+mkdir -p "$FAKE_HOME/.codex/sessions/2026/09/22/rollout-2026-09-22T00-00-00-$SID.jsonl" || exit 1
+reset_calls
+unit="$(ar "$CLI" codex "$SID" --time 1s --message 'still here' 2>&1)"
+check "an unreadable rollout still delivers with the bypass flag" \
+  called codex "--dangerously-bypass-approvals-and-sandbox resume $SID still here"
+check "an unreadable rollout is logged" grep -Fq 'unreadable rollout' "$STATE/$unit.log"
+rm -rf "$FAKE_HOME/.codex"
+
 # --- claude adapter ----------------------------------------------------------
 reset_calls
 transcript bypassPermissions
@@ -220,9 +229,24 @@ check "no live session resumes with --bg" \
   called claude "--resume $SID --bg --dangerously-skip-permissions wake up"
 check "claude resume runs in the transcript cwd" test "$(cat "$CALLS/claude.cwd")" = "$WS"
 
+transcript_path="$FAKE_HOME/.claude/projects/-ws/$SID.jsonl"
+rm -f "$transcript_path" && mkdir "$transcript_path" || exit 1
+reset_calls
+unit="$(ar "$CLI" claude "$SID" --time 1s --message 'still here' 2>&1)"
+check "an unreadable transcript still resumes with skip-permissions" \
+  called claude "--resume $SID --bg --dangerously-skip-permissions still here"
+check "an unreadable transcript is logged" grep -Fq 'unreadable transcript' "$STATE/$unit.log"
+
+sessions="$FAKE_HOME/.claude/sessions"
+mkdir -p "$sessions" || exit 1
 SOCK="$TMP/inbox.sock"
-python3 - "$SOCK" "$TMP/received" <<'PY' &
+# serve: a one-connection inbox registered for $SID. It records everything
+# until EOF and closes, like Claude Code's inbox.
+serve() {
+  rm -f "$SOCK" "$TMP/received"
+  python3 - "$SOCK" "$TMP/received" <<'PY' &
 import socket, sys
+socket.setdefaulttimeout(10)  # a poster that never connects fails the test, not hangs it
 server = socket.socket(socket.AF_UNIX)
 server.bind(sys.argv[1]); server.listen(1)
 conn, _ = server.accept()
@@ -231,32 +255,51 @@ while chunk := conn.recv(4096):
     data += chunk
 open(sys.argv[2], "wb").write(data)
 PY
-server_pid=$!
-for _ in $(seq 50); do [ -S "$SOCK" ] && break; sleep 0.1; done
-sessions="$FAKE_HOME/.claude/sessions"
-mkdir -p "$sessions" || exit 1
-printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":"%s","status":"idle"}\n' \
-  "$server_pid" "$SID" "$SOCK" > "$sessions/$server_pid.json"
-key_hash="$(printf %s "$SOCK" | sha256sum | cut -d' ' -f1)"
-echo '{"peerToken":"0123456789abcdef0123456789abcdef"}' > "$sessions/$server_pid.$key_hash.key"
-# A stale entry for a dead process must be ignored.
+  server_pid=$!
+  for _ in $(seq 50); do [ -S "$SOCK" ] && break; sleep 0.1; done
+  printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":"%s","status":"idle"}\n' \
+    "$server_pid" "$SID" "$SOCK" > "$sessions/$server_pid.json"
+  key="$sessions/$server_pid.$(printf %s "$SOCK" | sha256sum | cut -d' ' -f1).key"
+}
+fire_claude() { # fire_claude <message>: fire a 1s timer at once; prints its log path
+  local unit
+  unit="$(ar "$CLI" claude "$SID" --time 1s --message "$1" 2>&1)"
+  printf '%s' "$STATE/$unit.log"
+}
+USER_LINE='{"type": "user", "message": {"role": "user", "content": "job done"}}'
+
+serve
+echo '{"peerToken":"0123456789abcdef0123456789abcdef"}' > "$key"
+# A stale entry for a dead process and an unreadable entry must be ignored.
 printf '{"pid":999999999,"sessionId":"%s","messagingSocketPath":"/nonexistent.sock"}\n' \
   "$SID" > "$sessions/999999999.json"
-
+mkdir -p "$sessions/1.json" || exit 1
 out="$(ar "$CLI" claude "$SID" --time 1s --message x --dry-run 2>&1)"
 check "claude dry-run finds the live socket" grep -Fq "deliver: post to live socket $SOCK" <<< "$out"
-
 reset_calls
-ar "$CLI" claude "$SID" --time 1s --message 'job done' >/dev/null 2>&1
+log="$(fire_claude 'job done')"
 wait "$server_pid"; server_pid=
-expected='{"type": "auth", "token": "0123456789abcdef0123456789abcdef"}
-{"type": "user", "message": {"role": "user", "content": "job done"}}'
-check "live session gets the auth line then the user message" test "$(cat "$TMP/received")" = "$expected"
+check "live session gets the auth line then the user message" \
+  test "$(cat "$TMP/received")" = '{"type": "auth", "token": "0123456789abcdef0123456789abcdef"}'$'\n'"$USER_LINE"
+check "a live post is logged" grep -Fqx "agent-resume: posted to $SOCK" "$log"
 check "a live session is not also resumed" not_called claude
+check "the live socket is tried before the unreadable transcript is read" \
+  bash -c '! grep -Fq "unreadable transcript" "$1"' _ "$log"
+rmdir "$transcript_path" || exit 1
+transcript bypassPermissions
+
+serve
+mkdir "$key" || exit 1
+reset_calls
+log="$(fire_claude 'job done')"
+wait "$server_pid"; server_pid=
+check "an unreadable key file posts without the auth line" test "$(cat "$TMP/received")" = "$USER_LINE"
+check "an unreadable key file does not resume" not_called claude
 
 reset_calls
 ar "$CLI" claude "$SID" --time 1s --message 'socket gone' >/dev/null 2>&1
-check "a dead socket falls back to --bg resume" called claude "--resume $SID --bg --dangerously-skip-permissions socket gone"
+check "a dead process falls back to --bg resume" \
+  called claude "--resume $SID --bg --dangerously-skip-permissions socket gone"
 
 # --- list and cancel ---------------------------------------------------------
 reset_calls
