@@ -64,6 +64,7 @@ Two model-invoked references that run *beneath* the other skills — each the si
 ## Crossing sessions
 
 - **`/handoff`** — when a thread is full or you need to branch off (e.g. into a `/prototype` session), this compacts the conversation into a markdown file. You don't continue in place — you **open a new session and reference that file** to carry the context across. It's the bridge between context windows, in either direction. Use it when you want a **fresh session** but need the **current conversation preserved**.
+- **`/agent-resume`** — have a Claude Code or Codex session messaged when a job finishes or after a delay, from a trigger that outlives the session's process; a closed session is resumed.
 - **`/compact`** (built-in) — stay in the **same conversation**, letting the earlier turns be summarized. Use it at **intentional breaks between phases**, when you don't mind losing the verbatim history. Don't compact mid-phase — the agent can lose its way. `/handoff` forks; `/compact` continues.
 
 ## Cross-provider delivery

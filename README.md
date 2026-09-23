@@ -47,6 +47,8 @@ maps the complete collection.
 - `cross-provider-agent` — dispatch one bounded task to an external provider
   under least authority, with named authority profiles
 - `pr-ping-pong` — rally implementation against cross-provider reviewers
+- `agent-resume` — message a Claude Code or Codex session when a job finishes
+  or a timer fires, resuming it if it has closed
 
 ## Install
 
@@ -56,14 +58,21 @@ Link every canonical skill into both supported harness directories:
 scripts/link-skills.sh
 ```
 
-By default this links into `~/.claude/skills` and `~/.agents/skills`. Override
-either destination when needed:
+By default this links into `~/.claude/skills` and `~/.agents/skills`, and links
+every executable under `skills/*/bin/` (such as `agent-resume`) into
+`~/.local/bin`. Override any destination when needed:
 
 ```bash
 CLAUDE_SKILLS_DIR=/path/to/claude-skills \
 AGENTS_SKILLS_DIR=/path/to/agent-skills \
+BIN_DIR=/path/to/bin \
   scripts/link-skills.sh
 ```
+
+On a terminal, and without `--yes`, the installer then offers to set
+`crossSessionInbound` to `"accept"` in `~/.claude/settings.json`
+(`CLAUDE_SETTINGS_FILE` overrides the path) so `agent-resume` messages reach
+bypass-permissions Claude sessions without approval.
 
 The installer refuses to replace a real file or directory. Its hermetic smoke
 test uses temporary destinations and does not mutate a developer's installed
@@ -73,6 +82,7 @@ skills:
 tests/test-inventory.sh
 tests/test-link-skills.sh
 tests/test-check-requirements.sh
+tests/test-agent-resume.sh
 ```
 
 ## Check software requirements
