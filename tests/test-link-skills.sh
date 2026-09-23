@@ -154,18 +154,36 @@ fi
 on_terminal() { # on_terminal <answer>: run the installer on a pseudo-terminal
   printf '%s\n' "$1" | CLAUDE_SKILLS_DIR="$test_root/settings-claude" \
     AGENTS_SKILLS_DIR="$test_root/settings-agents" BIN_DIR="$test_root/settings-bin" \
-    script -qec "$REPO/scripts/link-skills.sh" /dev/null >/dev/null
+    script -qec "$REPO/scripts/link-skills.sh" /dev/null
 }
 
-on_terminal n
+on_terminal n >/dev/null
 if [ "$(cat "$settings")" != '{"theme": "dark"}' ]; then
   echo "error: answering n changed the settings file." >&2
   exit 1
 fi
-on_terminal y
+on_terminal y >/dev/null
 if ! python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); sys.exit(d != {"theme": "dark", "crossSessionInbound": "accept"})' "$settings"; then
   echo "error: answering y did not set crossSessionInbound while keeping other settings." >&2
   exit 1
 fi
 
 echo "crossSessionInbound prompt skipped without a terminal or with --yes, and honoured on a terminal"
+
+# Answering y with a malformed settings file reports it, leaves the file alone,
+# and does not fail an install whose linking already succeeded.
+printf '{"theme": ' > "$settings"
+if ! out="$(on_terminal y)"; then
+  echo "error: a malformed settings file failed the install." >&2
+  exit 1
+fi
+if ! grep -Fq "is not valid JSON" <<< "$out" || grep -Fq Traceback <<< "$out"; then
+  echo "error: a malformed settings file was not reported cleanly: $out" >&2
+  exit 1
+fi
+if [ "$(cat "$settings")" != '{"theme": ' ]; then
+  echo "error: a malformed settings file was changed." >&2
+  exit 1
+fi
+
+echo "a malformed settings file is reported and left unchanged"

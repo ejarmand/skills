@@ -138,17 +138,25 @@ else
   read -r -p "Set crossSessionInbound to \"accept\" in $SETTINGS so agent-resume messages reach bypassPermissions Claude sessions without approval? [y/N] " reply
   case "$reply" in
     y|Y|yes|YES)
-      python3 - "$SETTINGS" <<'PY'
+      # The links are already in place, so a bad settings file is reported
+      # without failing the install.
+      if python3 - "$SETTINGS" <<'PY'
 import json, os, sys
 path = sys.argv[1]
-settings = json.load(open(path)) if os.path.exists(path) else {}
+try:
+    settings = json.load(open(path)) if os.path.exists(path) else {}
+except ValueError as error:
+    sys.exit(f"error: {path} is not valid JSON ({error}); left it unchanged. "
+             'Fix it and re-run, or set "crossSessionInbound": "accept" by hand.')
 settings["crossSessionInbound"] = "accept"
 os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
 with open(path, "w") as out:
     json.dump(settings, out, indent=2)
     out.write("\n")
 PY
-      echo "set crossSessionInbound to \"accept\" in $SETTINGS"
+      then
+        echo "set crossSessionInbound to \"accept\" in $SETTINGS"
+      fi
       ;;
     *)
       echo "left $SETTINGS unchanged."
