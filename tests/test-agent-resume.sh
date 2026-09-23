@@ -2,8 +2,9 @@
 # Hermetic tests for skills/agent-resume/bin/agent-resume. A temporary HOME
 # holds fixture transcripts, rollouts and session registry entries; fake
 # systemd-run, systemctl, claude and codex on PATH record their calls. The fake
-# systemd-run runs the unit's command at once instead of scheduling it, records
-# the command's exit status in $CALLS/fire.status, and exits 0 like the real one.
+# systemd-run runs the unit's command at once instead of scheduling it, from
+# $HOME as a user unit does, records the command's exit status in
+# $CALLS/fire.status, and exits 0 like the real one.
 set -u -o pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)" || exit 1
@@ -48,24 +49,23 @@ cat > "$FAKE_BIN/systemd-run" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CALLS/systemd-run"
 [ "${FAKE_SYSTEMD_EXEC:-1}" = 1 ] || exit 0
-log= wd=
+log=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --property=StandardOutput=append:*) log="${1#--property=StandardOutput=append:}" ;;
-    --working-directory=*) wd="${1#--working-directory=}" ;;
     --) shift; break ;;
   esac
   shift
 done
-cd "$wd" || exit 1
+cd "$HOME" || exit 1
 "$@" >> "$log" 2>&1
 echo "$?" > "$CALLS/fire.status"
 exit 0
 FAKE
 chmod +x "$FAKE_BIN"/* || exit 1
 
-ar() {
-  (cd "$WS" && env -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID \
+ar() { # ar <command...>: run in $AR_CWD (default $WS) with the fake HOME and PATH
+  (cd "${AR_CWD:-$WS}" && env -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID \
     HOME="$FAKE_HOME" PATH="$FAKE_BIN:$PATH" CALLS="$CALLS" "$@")
 }
 reset_calls() { rm -f "$CALLS"/*; }
@@ -100,7 +100,8 @@ check "session defaults from CLAUDE_CODE_SESSION_ID" grep -Fq -- "--resume $SID"
 out="$(ar "$CLI" claude "$SID" --time 3h --message 'look at PRs' --dry-run 2>&1)"
 check "timer dry-run prints a systemd-run --user timer" \
   grep -Eq "^systemd-run --user --unit=agent-resume-[0-9a-f]{8} .*--on-active=3h -- .*_fire agent-resume-" <<< "$out"
-check "dry-run forwards the working directory" grep -Fq -- "--working-directory=$WS" <<< "$out"
+check "dry-run does not pin the unit's working directory" \
+  bash -c '! grep -Fq -- --working-directory <<< "$1"' _ "$out"
 check "dry-run logs to the state directory" \
   grep -Fq -- "StandardOutput=append:$FAKE_HOME/.local/state/agent-resume/agent-resume-" <<< "$out"
 check "claude dry-run reports no live socket" grep -Fq "no live socket for $SID" <<< "$out"
@@ -228,6 +229,20 @@ check "an unreadable rollout still delivers with --approve-for-me" \
   called codex "--approve-for-me resume $SID -- still here"
 check "an unreadable rollout is logged" grep -Fq 'unreadable rollout' "$STATE/$unit.log"
 rm -rf "$FAKE_HOME/.codex"
+
+# The scheduling directory can vanish before the trigger fires, e.g. a removed
+# worktree. The unit does not run there, so the message still goes out.
+gone="$TMP/gone"
+mkdir "$gone" || exit 1
+reset_calls
+unit="$(AR_CWD="$gone" ar env FAKE_SYSTEMD_EXEC=0 "$CLI" codex "$SID" --message 'dir gone' -- true 2>&1)"
+rmdir "$gone" || exit 1
+AR_CWD="$FAKE_HOME" ar "$CLI" _fire "$unit" >> "$STATE/$unit.log" 2>&1
+status=$?
+check "a trigger whose cwd vanished still fires cleanly" test "$status" -eq 0
+check "a command whose cwd vanished reports it could not start" \
+  grep -Fq '`true` could not start.' "$CALLS/codex.last"
+check "the vanished cwd is named in the message" grep -Fq "$gone" "$CALLS/codex.last"
 
 reset_calls
 ar "$CLI" codex "$SID" --time 1s --message='-x marks the spot' >/dev/null 2>&1

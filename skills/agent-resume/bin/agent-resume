@@ -217,7 +217,8 @@ def schedule(args, command):
     cwd = os.getcwd()
     run = ["systemd-run", "--user", f"--unit={unit}",
            f"--description=agent-resume {args.action} {session}", "--collect", "--quiet",
-           f"--working-directory={cwd}",
+           # No --working-directory: systemd will not start a unit whose directory
+           # is gone, losing the message. fire() runs the command in cwd instead.
            f"--property=StandardOutput=append:{log}", f"--property=StandardError=append:{log}"]
     if args.time:
         run.append(f"--on-active={args.time}")
