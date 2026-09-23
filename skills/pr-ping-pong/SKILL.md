@@ -108,6 +108,14 @@ authority. On top of that, each coordinator's prompt includes:
   whose first line is `<model> / rally <n> / <head OID>`.
 - path to local checkout/worktree
 
+Before dispatching each reviewer, record the current PR comment IDs using
+`gh api repos/{owner}/{repo}/issues/N/comments --paginate`. After its run,
+read the comments again. Count the review as complete only if a new comment
+ID has a first line exactly matching that reviewer's model, rally number, and
+pinned head. A successful agent exit without that comment is a failed review.
+Dispatch duplicate model entries sequentially so each has its own before and
+after snapshot. Do not count a failed review toward Pass.
+
 
 * note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
 clean-tree verification. When using it run reviewers sequentially, or pin one checkout per
@@ -133,7 +141,8 @@ rally.
 Free reviewers should  be used even if they duplicate the implementer, just use a fresh context.
 
 Use subscription-backed native CLIs for OpenAI, Anthropic, and Cursor models.
-Use OpenCode for Muse and GLM. Do not select Fable or Opus unless the user asks
+Use OpenCode for Muse and GLM; pass `--variant high` to its profiled runner for
+the reviewers listed above. Do not select Fable or Opus unless the user asks
 for them directly.
 
 ### 4. Adjudicate findings
@@ -151,10 +160,12 @@ Where reviewers disagree, use your judgement
 
 Stop and report at the first of these:
 
-1. **Pass** — Meaningful findings after adjudication.
+1. **Pass** — every reviewer published a verified comment and no meaningful
+   findings remain after adjudication.
 2. **Budget** — rally cap reached. Report the surviving findings.
-3. **Failure** — an implementer errors, cannot proceed, or the branch stops
-   building. Report the state; do not burn rallies on a broken tree.
+3. **Failure** — an implementer errors, a reviewer fails to publish its
+   matching comment, or the branch stops building. Report the state; do not
+   burn rallies on a broken tree.
 
 ## Merge
 
