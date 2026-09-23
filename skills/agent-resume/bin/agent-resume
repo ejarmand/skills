@@ -78,6 +78,8 @@ def claude_resume_command(session, message):
                         record = json.loads(line)
                     except ValueError:
                         continue
+                    if not isinstance(record, dict):
+                        continue
                     mode = record.get("permissionMode", mode)
                     cwd = record.get("cwd", cwd)
         except OSError as error:
@@ -154,6 +156,8 @@ def codex_resume_command(session, message, env):
                     try:
                         record = json.loads(line)
                     except ValueError:
+                        continue
+                    if not isinstance(record, dict):
                         continue
                     if record.get("type") == "turn_context" and isinstance(record.get("payload"), dict):
                         context = record["payload"]

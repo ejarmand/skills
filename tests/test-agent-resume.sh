@@ -231,6 +231,15 @@ check "an unreadable rollout still delivers with --approve-for-me" \
 check "an unreadable rollout is logged" grep -Fq 'unreadable rollout' "$STATE/$unit.log"
 rm -rf "$FAKE_HOME/.codex"
 
+rollout_path="$FAKE_HOME/.codex/sessions/2026/09/22/rollout-2026-09-22T00-00-00-$SID.jsonl"
+mkdir -p "$(dirname "$rollout_path")" || exit 1
+printf '%s\n' '["turn_context"]' > "$rollout_path"
+reset_calls
+ar "$CLI" codex "$SID" --time 1s --message 'non-object' >/dev/null 2>&1
+check "a non-object rollout record still delivers with --approve-for-me" \
+  called codex "--approve-for-me resume $SID -- non-object"
+rm -rf "$FAKE_HOME/.codex"
+
 # Codex keeps rollouts under $CODEX_HOME when it is set. When the trigger fires,
 # that is the caller's CODEX_HOME saved with the trigger, not the unit's own.
 codex_home="$TMP/codex-home"
@@ -284,6 +293,12 @@ check "claude resume passes a leading-dash message after --" \
   called claude "--resume $SID --bg --dangerously-skip-permissions -- --look at PRs"
 
 transcript_path="$FAKE_HOME/.claude/projects/-ws/$SID.jsonl"
+printf '%s\n' '["permissionMode"]' '["cwd"]' > "$transcript_path"
+reset_calls
+ar "$CLI" claude "$SID" --time 1s --message 'non-object' >/dev/null 2>&1
+check "a non-object transcript record still resumes in auto mode" \
+  called claude "--resume $SID --bg --permission-mode auto -- non-object"
+
 rm -f "$transcript_path" && mkdir "$transcript_path" || exit 1
 reset_calls
 unit="$(ar "$CLI" claude "$SID" --time 1s --message 'still here' 2>&1)"
