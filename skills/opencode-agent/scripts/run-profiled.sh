@@ -73,8 +73,11 @@ mkdir -p "$state_root"/{home,config/gh,data/opencode,cache,xdg-state,tmp} \
   || { rm -rf "$state_root"; exit "$EX_SETUP"; }
 touch "$state_root/data/opencode/auth.json" || { rm -rf "$state_root"; exit "$EX_SETUP"; }
 
-variant_args=()
-[ -z "$variant" ] || variant_args=(--variant "$variant")
+if [ -n "$variant" ]; then
+  set -- --variant "$variant"
+else
+  set --
+fi
 
 bwrap \
   --die-with-parent --new-session \
@@ -110,7 +113,7 @@ bwrap \
   --setenv OPENCODE_DISABLE_EXTERNAL_SKILLS 1 \
   --setenv OPENCODE_PURE 1 \
   --setenv OPENCODE_CONFIG_CONTENT "$config_json" \
-  /opt/opencode run --pure --format json --agent reviewer --model "$model" "${variant_args[@]}" -- "$prompt"
+  /opt/opencode run --pure --format json --agent reviewer --model "$model" "$@" -- "$prompt"
 child_exit=$?
 
 if ! rm -rf "$state_root"; then

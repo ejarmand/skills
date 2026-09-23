@@ -52,9 +52,6 @@ Add `--variant high` before `--` when the review calls for high effort. The
 runner passes the optional variant to OpenCode, which reports an error if the
 selected model does not support it.
 
-
-Which combines bubblewrap and agent profiles.
-
 ### available profiles
 
 **github-pr-reviewer**: `profiles/github-pr-reviewer/config.json` encodes the

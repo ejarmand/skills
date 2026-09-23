@@ -111,8 +111,9 @@ authority. On top of that, each coordinator's prompt includes:
 Before dispatching each reviewer, record the current PR comment IDs using
 `gh api repos/{owner}/{repo}/issues/N/comments --paginate`. After its run,
 read the comments again. Count the review as complete only if a new comment
-ID has a first line exactly matching that reviewer's model, rally number, and
-pinned head. A successful agent exit without that comment is a failed review.
+ID identifies a comment whose body first line exactly matches that reviewer's
+model, rally number, and pinned head. A successful agent exit without that
+comment is a failed review.
 Dispatch duplicate model entries sequentially so each has its own before and
 after snapshot. Do not count a failed review toward Pass.
 
@@ -163,9 +164,9 @@ Stop and report at the first of these:
 1. **Pass** — every reviewer published a verified comment and no meaningful
    findings remain after adjudication.
 2. **Budget** — rally cap reached. Report the surviving findings.
-3. **Failure** — an implementer errors, a reviewer fails to publish its
-   matching comment, or the branch stops building. Report the state; do not
-   burn rallies on a broken tree.
+3. **Failure** — an implementer errors or cannot proceed, a reviewer fails to
+   publish its matching comment, or the branch stops building. Report the
+   state; do not burn rallies on a broken tree.
 
 ## Merge
 
