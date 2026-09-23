@@ -105,7 +105,7 @@ check "dry-run logs to the state directory" \
   grep -Fq -- "StandardOutput=append:$FAKE_HOME/.local/state/agent-resume/agent-resume-" <<< "$out"
 check "claude dry-run reports no live socket" grep -Fq "no live socket for $SID" <<< "$out"
 check "claude dry-run shows the --bg resume fallback" \
-  grep -Fq "claude --resume $SID --bg --dangerously-skip-permissions -- 'look at PRs'" <<< "$out"
+  grep -Fq "claude --resume $SID --bg --permission-mode auto -- 'look at PRs'" <<< "$out"
 check "claude trigger warns about crossSessionInbound" grep -Fq 'crossSessionInbound is not "accept"' <<< "$out"
 check "dry-run runs nothing" not_called systemd-run
 check "dry-run writes no state" test ! -e "$FAKE_HOME/.local/state"
@@ -146,8 +146,8 @@ check "claude resume runs in the transcript cwd" grep -Fq "(cd $WS && claude" <<
 transcript default
 check "default mode adds no permission flag" grep -Fq -- "--bg -- m)" <<< "$(claude_plan)"
 transcript ""
-check "transcript without a mode falls back to skip-permissions" \
-  grep -Fq -- "--bg --dangerously-skip-permissions -- m" <<< "$(claude_plan)"
+check "transcript without a mode falls back to auto mode" \
+  grep -Fq -- "--bg --permission-mode auto -- m" <<< "$(claude_plan)"
 
 rollout() { # rollout <approval-json> <sandbox-json>
   mkdir -p "$FAKE_HOME/.codex/sessions/2026/09/22" || exit 1
@@ -170,11 +170,14 @@ rollout '"never"' '{"type":"read-only"}'
 check "never + read-only keeps the sandbox" \
   grep -Fq -- "-s read-only -c 'approval_policy=\"never\"' resume" <<< "$(codex_plan)"
 rollout '{"granular":{}}' '{"type":"read-only"}'
-check "unreadable approval policy falls back to bypass" \
-  grep -Fq -- "--dangerously-bypass-approvals-and-sandbox" <<< "$(codex_plan)"
+check "unreadable approval policy falls back to --approve-for-me" \
+  grep -Fq -- "--skip-git-repo-check --approve-for-me resume" <<< "$(codex_plan)"
+rollout '"on-request"' '{"type":"external-sandbox"}'
+check "unknown sandbox type falls back to --approve-for-me" \
+  grep -Fq -- "--skip-git-repo-check --approve-for-me resume" <<< "$(codex_plan)"
 rm -rf "$FAKE_HOME/.codex"
-check "missing rollout falls back to bypass" \
-  grep -Fq -- "--dangerously-bypass-approvals-and-sandbox resume" <<< "$(codex_plan)"
+check "missing rollout falls back to --approve-for-me" \
+  grep -Fq -- "--skip-git-repo-check --approve-for-me resume" <<< "$(codex_plan)"
 
 # --- completion message and codex adapter ------------------------------------
 STATE="$FAKE_HOME/.local/state/agent-resume"
@@ -193,7 +196,7 @@ Last 40 log lines:
 $(seq 11 50)"
 check "completion message has status, log path and last 40 lines" \
   test "$(cat "$CALLS/codex.last")" = "$expected"
-check "codex resume was tried first" called codex "exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox resume $SID"
+check "codex resume was tried first" called codex "exec --skip-git-repo-check --approve-for-me resume $SID"
 check "codex queue is not used when resume succeeds" bash -c '! grep -q "^queue" "$1"' _ "$CALLS/codex"
 check "the trigger's state file is removed after firing" test ! -e "$STATE/$unit.json"
 
@@ -221,8 +224,8 @@ check "a command that cannot start still delivers" \
 mkdir -p "$FAKE_HOME/.codex/sessions/2026/09/22/rollout-2026-09-22T00-00-00-$SID.jsonl" || exit 1
 reset_calls
 unit="$(ar "$CLI" codex "$SID" --time 1s --message 'still here' 2>&1)"
-check "an unreadable rollout still delivers with the bypass flag" \
-  called codex "--dangerously-bypass-approvals-and-sandbox resume $SID -- still here"
+check "an unreadable rollout still delivers with --approve-for-me" \
+  called codex "--approve-for-me resume $SID -- still here"
 check "an unreadable rollout is logged" grep -Fq 'unreadable rollout' "$STATE/$unit.log"
 rm -rf "$FAKE_HOME/.codex"
 
@@ -253,8 +256,8 @@ transcript_path="$FAKE_HOME/.claude/projects/-ws/$SID.jsonl"
 rm -f "$transcript_path" && mkdir "$transcript_path" || exit 1
 reset_calls
 unit="$(ar "$CLI" claude "$SID" --time 1s --message 'still here' 2>&1)"
-check "an unreadable transcript still resumes with skip-permissions" \
-  called claude "--resume $SID --bg --dangerously-skip-permissions -- still here"
+check "an unreadable transcript still resumes in auto mode" \
+  called claude "--resume $SID --bg --permission-mode auto -- still here"
 check "an unreadable transcript is logged" grep -Fq 'unreadable transcript' "$STATE/$unit.log"
 
 sessions="$FAKE_HOME/.claude/sessions"

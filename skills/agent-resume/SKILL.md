@@ -35,8 +35,9 @@ The session ID defaults to your own: Claude Code exports
 Pass another ID as the second argument to message a different session.
 
 The message reaches a live session directly and resumes a closed one with the
-permissions it last ran under. When no permissions are recorded, the resumed
-session runs fully auto-approved.
+permissions it last ran under. When no permissions are recorded, it resumes in
+auto-approve mode (`--permission-mode auto` for Claude, `--approve-for-me` for
+Codex), which still runs an automatic safety check on actions.
 
 ## Claude prerequisite
 

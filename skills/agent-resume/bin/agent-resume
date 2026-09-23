@@ -80,10 +80,13 @@ def claude_resume_command(session, message):
                     mode = record.get("permissionMode", mode)
                     cwd = record.get("cwd", cwd)
         except OSError as error:
-            print(f"agent-resume: unreadable transcript, so no permission mode: {error}",
-                  file=sys.stderr)
+            print(f"agent-resume: unreadable transcript: {error}", file=sys.stderr)
             mode = cwd = None
-    if mode is None or mode == "bypassPermissions":
+    if mode is None:
+        print(f"agent-resume: no readable permission mode for {session}; resuming in auto mode",
+              file=sys.stderr)
+        flags = ["--permission-mode", "auto"]
+    elif mode == "bypassPermissions":
         flags = ["--dangerously-skip-permissions"]
     elif mode == "default":
         flags = []
@@ -153,15 +156,17 @@ def codex_resume_command(session, message):
                     if record.get("type") == "turn_context" and isinstance(record.get("payload"), dict):
                         context = record["payload"]
         except OSError as error:
-            print(f"agent-resume: unreadable rollout, so no approval policy: {error}",
-                  file=sys.stderr)
+            print(f"agent-resume: unreadable rollout: {error}", file=sys.stderr)
             context = {}
     approval = context.get("approval_policy")
     sandbox = context.get("sandbox_policy")
     if not isinstance(sandbox, dict):
         sandbox = {}
-    if (not isinstance(approval, str) or sandbox.get("type") not in CODEX_SANDBOXES
-            or (approval == "never" and sandbox["type"] == "danger-full-access")):
+    if not isinstance(approval, str) or sandbox.get("type") not in CODEX_SANDBOXES:
+        print(f"agent-resume: no readable approval policy for {session}; "
+              "resuming with --approve-for-me", file=sys.stderr)
+        flags = ["--approve-for-me"]
+    elif approval == "never" and sandbox["type"] == "danger-full-access":
         flags = ["--dangerously-bypass-approvals-and-sandbox"]
     else:
         flags = ["-s", sandbox["type"], "-c", f'approval_policy="{approval}"']
