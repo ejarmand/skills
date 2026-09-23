@@ -71,6 +71,7 @@ ar() { # ar <command...>: run in $AR_CWD (default $WS) with the fake HOME and PA
 reset_calls() { rm -f "$CALLS"/*; }
 called() { [ -f "$CALLS/$1" ] && grep -Fq -- "$2" "$CALLS/$1"; }
 not_called() { [ ! -f "$CALLS/$1" ]; }
+contains() { [[ "$1" == *"$2"* ]]; }
 
 SID=11111111-2222-3333-4444-555555555555
 
@@ -226,9 +227,14 @@ ar env CODEX_EXEC_EXIT=1 CODEX_EXEC_OUTPUT="Error: thread $SID already has an ac
 check "an active writer falls back to codex queue" called codex "queue --thread $SID --message=queued"
 
 reset_calls
-ar env CODEX_EXEC_EXIT=1 CODEX_EXEC_OUTPUT="Error: model overloaded" \
-  "$CLI" codex "$SID" --message 'not queued' -- true >/dev/null 2>&1
+unit="$(ar env CODEX_EXEC_EXIT=1 CODEX_EXEC_OUTPUT="Error: model overloaded" \
+  "$CLI" codex "$SID" --message 'not queued' -- true 2>&1)"
 check "other resume failures do not queue" bash -c '! grep -q "^queue" "$1"' _ "$CALLS/codex"
+check "a failed delivery exits nonzero" test "$(cat "$CALLS/fire.status")" -ne 0
+check "a failed delivery logs the error and the full message" \
+  contains "$(cat "$STATE/$unit.log")" "agent-resume: delivery failed (exit status 1); \
+the undelivered message follows:"$'\n'"$(cat "$CALLS/codex.last")"
+check "a failed delivery still removes the state file" test ! -e "$STATE/$unit.json"
 
 reset_calls
 unit="$(ar "$CLI" codex "$SID" --time 1s --message 'timer text' 2>&1)"
@@ -239,6 +245,20 @@ reset_calls
 unit="$(ar "$CLI" codex "$SID" --message 'missing' -- /nonexistent/command 2>&1)"
 check "a command that cannot start still delivers" \
   grep -Fq '`/nonexistent/command` could not start.' "$CALLS/codex.last"
+
+# A PATH with python3, bash and the fake systemd-run, a non-executable codex, and
+# no claude. It must not reach the real binaries, so it holds nothing else.
+NOBIN="$TMP/nobin"
+mkdir -p "$NOBIN" || exit 1
+ln -s "$(command -v python3)" "$NOBIN/python3" && ln -s "$(command -v bash)" "$NOBIN/bash" \
+  && ln -s "$FAKE_BIN/systemd-run" "$NOBIN/systemd-run" && printf '#!/bin/sh\n' > "$NOBIN/codex" || exit 1
+reset_calls
+unit="$(ar env PATH="$NOBIN" "$CLI" codex "$SID" --time 1s --message 'no codex' 2>&1)"
+check "an unexecutable codex exits nonzero" test "$(cat "$CALLS/fire.status")" -ne 0
+check "an unexecutable codex logs the error and the message" \
+  contains "$(cat "$STATE/$unit.log")" "agent-resume: delivery failed (PermissionError: [Errno 13] \
+Permission denied: 'codex'); the undelivered message follows:"$'\n'"no codex"
+check "an unexecutable codex still removes the state file" test ! -e "$STATE/$unit.json"
 
 # A directory where a file should be is unreadable even to root.
 mkdir -p "$FAKE_HOME/.codex/sessions/2026/09/22/rollout-2026-09-22T00-00-00-$SID.jsonl" || exit 1
@@ -316,6 +336,14 @@ reset_calls
 ar "$CLI" claude "$SID" --time 1s --message 'non-object' >/dev/null 2>&1
 check "a non-object transcript record still resumes in auto mode" \
   called claude "--resume $SID --bg --permission-mode auto -- non-object"
+
+reset_calls
+unit="$(ar env PATH="$NOBIN" "$CLI" claude "$SID" --time 1s --message 'no claude' 2>&1)"
+check "a missing claude exits nonzero" test "$(cat "$CALLS/fire.status")" -ne 0
+check "a missing claude logs the error and the message" \
+  contains "$(cat "$STATE/$unit.log")" "agent-resume: delivery failed (FileNotFoundError: [Errno 2] \
+No such file or directory: 'claude'); the undelivered message follows:"$'\n'"no claude"
+check "a missing claude still removes the state file" test ! -e "$STATE/$unit.json"
 
 rm -f "$transcript_path" && mkdir "$transcript_path" || exit 1
 reset_calls

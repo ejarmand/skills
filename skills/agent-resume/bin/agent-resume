@@ -18,6 +18,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 HOME = Path.home()
@@ -264,8 +265,8 @@ def schedule(args, command):
 def fire(unit):
     spec_path = STATE / f"{unit}.json"
     spec = json.loads(spec_path.read_text())
+    message = spec["message"]
     try:
-        message = spec["message"]
         if spec["command"]:
             log = STATE / f"{unit}.log"
             try:
@@ -279,9 +280,20 @@ def fire(unit):
                 tail = "".join(collections.deque(lines, TAIL_LINES))
             message = completion_message(message, spec["command"], status, tail, log)
         env = {k: v for k, v in spec["env"].items() if k not in SESSION_VARS}
-        return DELIVER[spec["provider"]](spec["session"], message, env, dry_run=False)
+        code = DELIVER[spec["provider"]](spec["session"], message, env, dry_run=False)
+        error = f"exit status {code}"
+    except Exception as exc:
+        # Nothing retries a trigger, so the unit log is the message's last copy.
+        sys.stdout.flush()
+        traceback.print_exc()
+        code, error = 1, f"{type(exc).__name__}: {exc}"
     finally:
         spec_path.unlink()
+    if code:
+        sys.stdout.flush()
+        print(f"agent-resume: delivery failed ({error}); the undelivered message follows:\n{message}",
+              file=sys.stderr)
+    return code
 
 
 def list_triggers():
