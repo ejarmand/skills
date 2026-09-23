@@ -35,11 +35,6 @@ CODEX_BUSY = "already has an active writer"
 CODEX_SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
 
 
-def existing_dir(path):
-    """The session's recorded cwd, unless it has since been removed."""
-    return path if path and os.path.isdir(path) else None
-
-
 def claude_live_socket(session):
     """Return (socket path, peer token or None) of a live process holding the session."""
     for entry in sorted((HOME / ".claude/sessions").glob("*.json")):
@@ -82,7 +77,8 @@ def claude_resume_command(session, message):
         flags = []
     else:
         flags = ["--permission-mode", mode]
-    return ["claude", "--resume", session, "--bg", *flags, message], existing_dir(cwd)
+    command = ["claude", "--resume", session, "--bg", *flags, message]
+    return command, cwd if cwd and os.path.isdir(cwd) else None
 
 
 def post_to_socket(path, token, message):
@@ -144,7 +140,8 @@ def codex_resume_command(session, message):
         if sandbox.get("network_access") is True:
             flags += ["-c", "sandbox_workspace_write.network_access=true"]
     command = ["codex", "exec", "--skip-git-repo-check", *flags, "resume", session, message]
-    return command, existing_dir(context.get("cwd"))
+    cwd = context.get("cwd")
+    return command, cwd if cwd and os.path.isdir(cwd) else None
 
 
 def deliver_codex(session, message, env, dry_run):
