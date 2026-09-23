@@ -186,4 +186,19 @@ if [ "$(cat "$settings")" != '{"theme": ' ]; then
   exit 1
 fi
 
-echo "a malformed settings file is reported and left unchanged"
+# Valid JSON that is not an object gets the same treatment.
+echo '[]' > "$settings"
+if ! out="$(on_terminal y)"; then
+  echo "error: a non-object settings file failed the install." >&2
+  exit 1
+fi
+if ! grep -Fq "is not a JSON object" <<< "$out" || grep -Fq Traceback <<< "$out"; then
+  echo "error: a non-object settings file was not reported cleanly: $out" >&2
+  exit 1
+fi
+if [ "$(cat "$settings")" != '[]' ]; then
+  echo "error: a non-object settings file was changed." >&2
+  exit 1
+fi
+
+echo "a malformed or non-object settings file is reported and left unchanged"

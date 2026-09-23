@@ -148,6 +148,9 @@ try:
 except ValueError as error:
     sys.exit(f"error: {path} is not valid JSON ({error}); left it unchanged. "
              'Fix it and re-run, or set "crossSessionInbound": "accept" by hand.')
+if not isinstance(settings, dict):
+    sys.exit(f"error: {path} is not a JSON object; left it unchanged. "
+             'Fix it and re-run, or set "crossSessionInbound": "accept" by hand.')
 settings["crossSessionInbound"] = "accept"
 os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
 with open(path, "w") as out:
