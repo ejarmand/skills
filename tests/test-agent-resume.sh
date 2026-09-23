@@ -179,6 +179,18 @@ rollout '"on-request"' '{"type":"workspace-write","network_access":true}'
 check "last turn_context replays -s and approval_policy" \
   grep -Fq -- "-s workspace-write -c 'approval_policy=\"on-request\"' -c sandbox_workspace_write.network_access=true resume" <<< "$(codex_plan)"
 check "codex resume runs in the turn_context cwd" grep -Fq "(cd $WS && codex" <<< "$(codex_plan)"
+rollout '"on-request"' '{"type":"workspace-write","writable_roots":["/a b","/é\"q"]}'
+check "workspace-write replays writable_roots as a TOML array" \
+  grep -Fq -- "-c 'sandbox_workspace_write.writable_roots=[\"/a b\", \"/é\\\"q\"]' resume" <<< "$(codex_plan)"
+rollout '"on-request"' '{"type":"workspace-write","writable_roots":["/a",5]}'
+check "writable_roots holding a non-string is not replayed" \
+  bash -c '! grep -Fq writable_roots <<< "$1"' _ "$(codex_plan)"
+rollout '"on-request"' '{"type":"workspace-write","writable_roots":"/a"}'
+check "a non-list writable_roots is not replayed" \
+  bash -c '! grep -Fq writable_roots <<< "$1"' _ "$(codex_plan)"
+rollout '"on-request"' '{"type":"read-only","writable_roots":["/a"]}'
+check "writable_roots is replayed only for workspace-write" \
+  bash -c '! grep -Fq writable_roots <<< "$1"' _ "$(codex_plan)"
 rollout '"never"' '{"type":"read-only"}'
 check "never + read-only keeps the sandbox" \
   grep -Fq -- "-s read-only -c 'approval_policy=\"never\"' resume" <<< "$(codex_plan)"

@@ -191,6 +191,13 @@ def codex_resume_command(session, message, env):
         flags = ["-s", sandbox["type"], "-c", f'approval_policy="{approval}"']
         if sandbox.get("network_access") is True:
             flags += ["-c", "sandbox_workspace_write.network_access=true"]
+        roots = sandbox.get("writable_roots")
+        if (sandbox["type"] == "workspace-write" and isinstance(roots, list) and roots
+                and all(isinstance(root, str) for root in roots)):
+            # A JSON array of strings is a TOML array; ensure_ascii would emit
+            # surrogate-pair escapes, which TOML rejects.
+            flags += ["-c", "sandbox_workspace_write.writable_roots="
+                      + json.dumps(roots, ensure_ascii=False)]
     command = ["codex", "exec", "--skip-git-repo-check", *flags, "resume", session, "--", message]
     cwd = context.get("cwd")
     return command, cwd if isinstance(cwd, str) and os.path.isdir(cwd) else None
