@@ -177,17 +177,20 @@ check "never + danger-full-access replays the bypass flag" \
   grep -Fq -- "--skip-git-repo-check --dangerously-bypass-approvals-and-sandbox resume $SID -- m" <<< "$(codex_plan)"
 rollout '"on-request"' '{"type":"workspace-write","network_access":true}'
 check "last turn_context replays -s and approval_policy" \
-  grep -Fq -- "-s workspace-write -c 'approval_policy=\"on-request\"' -c sandbox_workspace_write.network_access=true resume" <<< "$(codex_plan)"
+  grep -Fq -- "-s workspace-write -c 'approval_policy=\"on-request\"' -c sandbox_workspace_write.network_access=true -c 'sandbox_workspace_write.writable_roots=[]' resume" <<< "$(codex_plan)"
+rollout '"on-request"' '{"type":"workspace-write","network_access":false,"writable_roots":[]}'
+check "recorded network off and no extra roots are replayed explicitly" \
+  grep -Fq -- "-c sandbox_workspace_write.network_access=false -c 'sandbox_workspace_write.writable_roots=[]' resume" <<< "$(codex_plan)"
 check "codex resume runs in the turn_context cwd" grep -Fq "(cd $WS && codex" <<< "$(codex_plan)"
 rollout '"on-request"' '{"type":"workspace-write","writable_roots":["/a b","/é\"q"]}'
 check "workspace-write replays writable_roots as a TOML array" \
   grep -Fq -- "-c 'sandbox_workspace_write.writable_roots=[\"/a b\", \"/é\\\"q\"]' resume" <<< "$(codex_plan)"
 rollout '"on-request"' '{"type":"workspace-write","writable_roots":["/a",5]}'
-check "writable_roots holding a non-string is not replayed" \
-  bash -c '! grep -Fq writable_roots <<< "$1"' _ "$(codex_plan)"
+check "writable_roots holding a non-string replays as no extra roots" \
+  grep -Fq -- "writable_roots=[]' resume" <<< "$(codex_plan)"
 rollout '"on-request"' '{"type":"workspace-write","writable_roots":"/a"}'
-check "a non-list writable_roots is not replayed" \
-  bash -c '! grep -Fq writable_roots <<< "$1"' _ "$(codex_plan)"
+check "a non-list writable_roots replays as no extra roots" \
+  grep -Fq -- "writable_roots=[]' resume" <<< "$(codex_plan)"
 rollout '"on-request"' '{"type":"read-only","writable_roots":["/a"]}'
 check "writable_roots is replayed only for workspace-write" \
   bash -c '! grep -Fq writable_roots <<< "$1"' _ "$(codex_plan)"
@@ -323,13 +326,13 @@ codex_home="$TMP/codex-home"
 rollout '"on-request"' '{"type":"workspace-write"}' "$codex_home"
 out="$(ar env CODEX_HOME="$codex_home" "$CLI" codex "$SID" --time 1h --message m --dry-run 2>/dev/null)"
 check "dry-run finds a rollout under CODEX_HOME" \
-  grep -Fq -- "-s workspace-write -c 'approval_policy=\"on-request\"' resume" <<< "$out"
+  grep -Fq -- "-s workspace-write -c 'approval_policy=\"on-request\"' -c sandbox_workspace_write.network_access=false" <<< "$out"
 reset_calls
 unit="$(ar env CODEX_HOME="$codex_home" FAKE_SYSTEMD_EXEC=0 \
   "$CLI" codex "$SID" --time 1s --message 'custom home' 2>&1)"
 AR_CWD="$FAKE_HOME" ar "$CLI" _fire "$unit" >> "$STATE/$unit.log" 2>&1
 check "firing finds the rollout under the caller's saved CODEX_HOME" \
-  called codex "-s workspace-write -c approval_policy=\"on-request\" resume $SID -- custom home"
+  called codex "-s workspace-write -c approval_policy=\"on-request\" -c sandbox_workspace_write.network_access=false -c sandbox_workspace_write.writable_roots=[] resume $SID -- custom home"
 rm -rf "$codex_home"
 
 # The scheduling directory can vanish before the trigger fires, e.g. a removed
