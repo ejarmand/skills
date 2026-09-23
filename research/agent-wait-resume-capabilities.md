@@ -159,6 +159,17 @@ outside script to post a message into a live session.
     through `socat - UNIX-CONNECT:<socket>`. Not tested here.
   - Connections that send no complete line within 30 s are closed (2.1.243),
     so a watcher should capture output first and connect after.
+  - The inbox never writes to an inbound connection. It closes the connection
+    once it has read the poster's lines, and reports whether a peer message
+    was delivered, held or refused only as a `peer_message_status` frame
+    sent to the poster's own inbox. The peer token lives in
+    `~/.claude/sessions/<pid>.<sha256(socket path)>.key` as `peerToken`. The
+    auth line is required only on Windows (`authRequired = requireAuth ??
+    isWindows`, and no caller passes `requireAuth`). On Linux a post with no
+    auth line or a wrong token is still read, and Claude Code's own peer
+    sender leaves the auth line out when it finds no key file. Where auth is
+    required, a bad auth line makes the inbox drop the connection
+    (2.1.280 binary).
   - Inbound controls apply. Messages the session verifies came from its own
     child processes (a hook or Bash command posting back) are delivered by
     default; on Linux this is verified by process evidence even after the

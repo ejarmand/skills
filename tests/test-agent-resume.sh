@@ -2,7 +2,8 @@
 # Hermetic tests for skills/agent-resume/bin/agent-resume. A temporary HOME
 # holds fixture transcripts, rollouts and session registry entries; fake
 # systemd-run, systemctl, claude and codex on PATH record their calls. The fake
-# systemd-run runs the unit's command at once instead of scheduling it.
+# systemd-run runs the unit's command at once instead of scheduling it, records
+# the command's exit status in $CALLS/fire.status, and exits 0 like the real one.
 set -u -o pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)" || exit 1
@@ -56,7 +57,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
-cd "$wd" && exec "$@" >> "$log" 2>&1
+cd "$wd" || exit 1
+"$@" >> "$log" 2>&1
+echo "$?" > "$CALLS/fire.status"
+exit 0
 FAKE
 chmod +x "$FAKE_BIN"/* || exit 1
 
@@ -240,16 +244,20 @@ check "an unreadable transcript is logged" grep -Fq 'unreadable transcript' "$ST
 sessions="$FAKE_HOME/.claude/sessions"
 mkdir -p "$sessions" || exit 1
 SOCK="$TMP/inbox.sock"
-# serve: a one-connection inbox registered for $SID. It records everything
-# until EOF and closes, like Claude Code's inbox.
+# serve <read|reset>: a one-connection inbox registered for $SID. "read" records
+# everything until EOF and closes, like Claude Code's inbox. "reset" closes after
+# one byte with the rest unread, which resets the poster's connection.
 serve() {
   rm -f "$SOCK" "$TMP/received"
-  python3 - "$SOCK" "$TMP/received" <<'PY' &
+  python3 - "$SOCK" "$TMP/received" "$1" <<'PY' &
 import socket, sys
 socket.setdefaulttimeout(10)  # a poster that never connects fails the test, not hangs it
 server = socket.socket(socket.AF_UNIX)
 server.bind(sys.argv[1]); server.listen(1)
 conn, _ = server.accept()
+if sys.argv[3] == "reset":
+    conn.recv(1)
+    sys.exit()
 data = b""
 while chunk := conn.recv(4096):
     data += chunk
@@ -268,7 +276,7 @@ fire_claude() { # fire_claude <message>: fire a 1s timer at once; prints its log
 }
 USER_LINE='{"type": "user", "message": {"role": "user", "content": "job done"}}'
 
-serve
+serve read
 echo '{"peerToken":"0123456789abcdef0123456789abcdef"}' > "$key"
 # A stale entry for a dead process and an unreadable entry must be ignored.
 printf '{"pid":999999999,"sessionId":"%s","messagingSocketPath":"/nonexistent.sock"}\n' \
@@ -288,7 +296,15 @@ check "the live socket is tried before the unreadable transcript is read" \
 rmdir "$transcript_path" || exit 1
 transcript bypassPermissions
 
-serve
+serve read
+reset_calls
+log="$(fire_claude 'job done')"
+wait "$server_pid"; server_pid=
+check "a missing peer token posts without the auth line" test "$(cat "$TMP/received")" = "$USER_LINE"
+check "a missing peer token is logged" grep -Fq "no readable peer token for $SOCK" "$log"
+check "a post without a token is not also resumed" not_called claude
+
+serve read
 mkdir "$key" || exit 1
 reset_calls
 log="$(fire_claude 'job done')"
@@ -296,10 +312,27 @@ wait "$server_pid"; server_pid=
 check "an unreadable key file posts without the auth line" test "$(cat "$TMP/received")" = "$USER_LINE"
 check "an unreadable key file does not resume" not_called claude
 
+serve reset
+reset_calls
+log="$(fire_claude 'job done')"
+wait "$server_pid"; server_pid=
+check "a reset post to a live session exits nonzero" test "$(cat "$CALLS/fire.status")" -ne 0
+check "a reset post is logged as undelivered" grep -Fq "not resuming the live session $SID" "$log"
+check "a reset post does not start a copy with --resume" not_called claude
+
 reset_calls
 ar "$CLI" claude "$SID" --time 1s --message 'socket gone' >/dev/null 2>&1
 check "a dead process falls back to --bg resume" \
   called claude "--resume $SID --bg --dangerously-skip-permissions socket gone"
+
+rm -rf "$sessions"/*.json
+printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":"%s"}\n' "$$" "$SID" "$TMP/none.sock" \
+  > "$sessions/$$.json"
+reset_calls
+unit="$(ar "$CLI" claude "$SID" --time 1s --message 'nobody listening' 2>&1)"
+check "a live pid with no listening inbox falls back to --bg resume" \
+  called claude "--resume $SID --bg --dangerously-skip-permissions nobody listening"
+check "the missing inbox is logged" grep -Fq "no inbox is listening" "$STATE/$unit.log"
 
 # --- list and cancel ---------------------------------------------------------
 reset_calls

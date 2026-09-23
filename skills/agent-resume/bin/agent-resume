@@ -89,22 +89,6 @@ def claude_resume_command(session, message):
     return command, cwd if cwd and os.path.isdir(cwd) else None
 
 
-def post_to_socket(path, token, message):
-    lines = [{"type": "auth", "token": token}] if token else []
-    lines.append({"type": "user", "message": {"role": "user", "content": message}})
-    with socket.socket(socket.AF_UNIX) as conn:
-        conn.settimeout(5)
-        conn.connect(path)
-        conn.sendall("".join(json.dumps(line) + "\n" for line in lines).encode())
-        conn.shutdown(socket.SHUT_WR)
-        conn.settimeout(2)
-        try:
-            reply = conn.recv(65536)
-        except socket.timeout:
-            reply = b""
-    return reply.decode(errors="replace").strip()
-
-
 def deliver_claude(session, message, env, dry_run):
     live = claude_live_socket(session)
     if dry_run:
@@ -114,12 +98,36 @@ def deliver_claude(session, message, env, dry_run):
         print(f"fallback: (cd {shlex.quote(cwd or '.')} && {shlex.join(resume)})")
         return 0
     if live:
+        path, token = live
+        lines = [{"type": "user", "message": {"role": "user", "content": message}}]
+        if token:
+            lines.insert(0, {"type": "auth", "token": token})
+        else:
+            # Claude Code 2.1.280 requires the auth line only on Windows, and its
+            # own peer sender also posts without one when the key file is missing.
+            print(f"agent-resume: no readable peer token for {path}; posting without the auth line",
+                  file=sys.stderr)
         try:
-            reply = post_to_socket(live[0], live[1], message)
-            print(f"agent-resume: posted to {live[0]}" + (f": {reply}" if reply else ""))
+            with socket.socket(socket.AF_UNIX) as conn:
+                conn.settimeout(5)
+                conn.connect(path)
+                conn.sendall("".join(json.dumps(line) + "\n" for line in lines).encode())
+                conn.shutdown(socket.SHUT_WR)
+                # The inbox never replies; crossSessionInbound decides later whether
+                # the message is delivered or held. A clean close means it read the lines.
+                while conn.recv(4096):
+                    pass
+            print(f"agent-resume: posted to {path}")
             return 0
+        except (FileNotFoundError, ConnectionRefusedError) as error:
+            print(f"agent-resume: {path}: {error}; no inbox is listening, so resuming instead",
+                  file=sys.stderr)
         except OSError as error:
-            print(f"agent-resume: {live[0]}: {error}; resuming instead", file=sys.stderr)
+            # The session is live, and `claude --resume --bg` on a live session
+            # starts a copy of it rather than reaching it.
+            print(f"agent-resume: posting to {path} failed: {error}; not resuming the live "
+                  f"session {session}, so the message was not delivered", file=sys.stderr)
+            return 1
     resume, cwd = claude_resume_command(session, message)
     print(f"agent-resume: {shlex.join(resume[:-1])} <message>", flush=True)
     return subprocess.run(resume, cwd=cwd, env=env, stdin=subprocess.DEVNULL).returncode
