@@ -6,8 +6,9 @@ description: Resume a Claude Code or Codex session later, from outside it. Use t
 # Agent resume
 
 `agent-resume` sends a message into a session when a trigger fires. The
-trigger runs as a `systemd-run --user` unit, so it outlives your turn, your
-process and logout, but not a reboot. `scripts/link-skills.sh` puts it on
+trigger runs as a `systemd-run --user` unit, so it outlives your turn and your
+process, and logout too if lingering is on (`loginctl enable-linger`), but not
+a reboot. `scripts/link-skills.sh` puts it on
 PATH; it also lives at `bin/agent-resume` in this skill.
 
 ```bash
