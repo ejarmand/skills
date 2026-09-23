@@ -384,8 +384,9 @@ open(sys.argv[2], "wb").write(data)
 PY
   server_pid=$!
   for _ in $(seq 50); do [ -S "$SOCK" ] && break; sleep 0.1; done
-  printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":"%s","status":"idle"}\n' \
-    "$server_pid" "$SID" "$SOCK" > "$sessions/$server_pid.json"
+  # Like Claude Code, record field 22 of /proc/<pid>/stat as procStart.
+  printf '{"pid":%s,"procStart":"%s","sessionId":"%s","messagingSocketPath":"%s","status":"idle"}\n' \
+    "$server_pid" "$(cut -d' ' -f22 "/proc/$server_pid/stat")" "$SID" "$SOCK" > "$sessions/$server_pid.json"
   key="$sessions/$server_pid.$(printf %s "$SOCK" | sha256sum | cut -d' ' -f1).key"
 }
 fire_claude() { # fire_claude <message>: fire a 1s timer at once; prints its log path
@@ -409,8 +410,13 @@ printf '{"pid":"%s","sessionId":"%s","messagingSocketPath":"%s"}\n' "$$" "$SID" 
   > "$sessions/0c.json"
 printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":["%s"]}\n' "$$" "$SID" "$SOCK" \
   > "$sessions/0d.json"
+# A live PID whose start time differs from the recorded procStart was recycled.
+printf '{"pid":%s,"procStart":"1","sessionId":"%s","messagingSocketPath":"%s"}\n' "$$" "$SID" \
+  "$TMP/recycled.sock" > "$sessions/0e.json"
 out="$(ar "$CLI" claude "$SID" --time 1s --message x --dry-run 2>&1)"
 check "claude dry-run finds the live socket" grep -Fq "deliver: post to live socket $SOCK" <<< "$out"
+check "an entry whose procStart differs from the PID's start time is skipped" \
+  bash -c '! grep -Fq recycled.sock <<< "$1"' _ "$out"
 reset_calls
 log="$(fire_claude 'job done')"
 wait "$server_pid"; server_pid=
@@ -454,6 +460,19 @@ wait "$server_pid"; server_pid=
 check "a reset post to a live session exits nonzero" test "$(cat "$CALLS/fire.status")" -ne 0
 check "a reset post is logged as undelivered" grep -Fq "not resuming the live session $SID" "$log"
 check "a reset post does not start a copy with --resume" not_called claude
+
+# A stale entry with no procStart, sorting first, whose PID a live process now
+# holds and whose socket is gone, must not start a copy of the live session.
+serve read
+printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":"%s"}\n' "$$" "$SID" "$TMP/stale.sock" \
+  > "$sessions/0f.json"
+reset_calls
+log="$(fire_claude 'job done')"
+wait "$server_pid"; server_pid=
+check "a stale entry sorting first does not stop the post to the live session" \
+  test "$(cat "$TMP/received")" = "$USER_LINE"
+check "a stale entry sorting first does not resume" not_called claude
+check "the stale entry's missing inbox is logged" grep -Fq "$TMP/stale.sock" "$log"
 
 reset_calls
 ar "$CLI" claude "$SID" --time 1s --message 'socket gone' >/dev/null 2>&1

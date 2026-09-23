@@ -40,8 +40,12 @@ CODEX_BUSY = "already has an active writer"
 CODEX_SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
 
 
-def claude_live_socket(session):
-    """Return (socket path, peer token or None) of a live process holding the session."""
+def claude_live_sockets(session):
+    """(socket path, peer token or None) for each live process registered for the session.
+
+    Stale entries stay in the registry, so there can be several.
+    """
+    live = []
     for entry in sorted((HOME / ".claude/sessions").glob("*.json")):
         try:
             info = json.loads(entry.read_text())
@@ -55,18 +59,21 @@ def claude_live_socket(session):
         if not isinstance(sock, str) or not sock or type(pid) is not int:
             continue
         try:
-            os.kill(pid, 0)
-        except (ProcessLookupError, OverflowError):
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except OSError:
+            continue  # no such process
+        # procStart is field 22 of /proc/<pid>/stat when the entry was written;
+        # Claude Code reads a mismatch as a recycled PID, and so does this.
+        start = info.get("procStart")
+        if isinstance(start, str) and stat[stat.rindex(")") + 2:].split(" ")[19] != start:
             continue
-        except PermissionError:
-            pass
         key = entry.parent / f"{pid}.{hashlib.sha256(sock.encode()).hexdigest()}.key"
         try:
             token = json.loads(key.read_text())["peerToken"]
         except (OSError, ValueError, KeyError, TypeError):
             token = None
-        return sock, token if isinstance(token, str) else None
-    return None
+        live.append((sock, token if isinstance(token, str) else None))
+    return live
 
 
 def claude_resume_command(session, message):
@@ -104,15 +111,18 @@ def claude_resume_command(session, message):
 
 
 def deliver_claude(session, message, env, dry_run):
-    live = claude_live_socket(session)
+    live = claude_live_sockets(session)
     if dry_run:
         resume, cwd = claude_resume_command(session, message)
-        print(f"deliver: post to live socket {live[0]}" if live else
-              f"deliver: no live socket for {session} (checked again when the trigger fires)")
+        for path, _ in live:
+            print(f"deliver: post to live socket {path}")
+        if not live:
+            print(f"deliver: no live socket for {session} (checked again when the trigger fires)")
         print(f"fallback: (cd {shlex.quote(cwd or '.')} && {shlex.join(resume)})")
         return 0
-    if live:
-        path, token = live
+    # Resuming while any entry's inbox might be the live session would start a
+    # copy of it, so every entry is tried first.
+    for path, token in live:
         lines = [{"type": "user", "message": {"role": "user", "content": message}}]
         if token:
             lines.insert(0, {"type": "auth", "token": token})
@@ -134,8 +144,7 @@ def deliver_claude(session, message, env, dry_run):
             print(f"agent-resume: posted to {path}")
             return 0
         except (FileNotFoundError, ConnectionRefusedError) as error:
-            print(f"agent-resume: {path}: {error}; no inbox is listening, so resuming instead",
-                  file=sys.stderr)
+            print(f"agent-resume: {path}: {error}; no inbox is listening there", file=sys.stderr)
         except OSError as error:
             # The session is live, and `claude --resume --bg` on a live session
             # starts a copy of it rather than reaching it.
