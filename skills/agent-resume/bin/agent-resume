@@ -32,8 +32,10 @@ SESSION_VARS = {
     "CLAUDE_CODE_MESSAGING_TOKEN", "CODEX_THREAD_ID",
 }
 TAIL_LINES = 40
-# The tail reaches claude or codex inside one argument, which Linux caps at 128 KiB.
-TAIL_CHARS = 20_000
+# The completion message reaches claude or codex as one argument, and Linux caps
+# an argument at MAX_ARG_STRLEN, 131072 bytes counting its NUL. `codex queue`
+# prefixes it with --message=.
+MESSAGE_BYTES = 131072 - 1 - len("--message=")
 UNIT_RE = re.compile(r"agent-resume-[0-9a-f]{8}")
 CODEX_BUSY = "already has an active writer"
 # A tuple, not a set: the rollout's sandbox type may be an unhashable list or object.
@@ -295,9 +297,13 @@ def fire(unit):
                 status = "could not start"
             sys.stdout.flush()
             with open(log, errors="replace") as lines:
-                tail = "".join(collections.deque(lines, TAIL_LINES))
-            # An argument cannot hold a NUL byte either.
-            tail = tail[-TAIL_CHARS:].replace("\0", "\ufffd")
+                # An argument cannot hold a NUL byte either.
+                tail = "".join(collections.deque(lines, TAIL_LINES)).replace("\0", "\ufffd")
+            # Keep as much of the tail's end as fits; a character cut in half is dropped.
+            # os.fsencode encodes the message the way subprocess will.
+            room = MESSAGE_BYTES - len(os.fsencode(
+                completion_message(message, spec["command"], status, "", log)))
+            tail = os.fsencode(tail)[-room:].decode(errors="ignore") if room > 0 else ""
             message = completion_message(message, spec["command"], status, tail, log)
         env = {k: v for k, v in spec["env"].items() if k not in SESSION_VARS}
         code = DELIVER[spec["provider"]](spec["session"], message, env, dry_run=False)

@@ -258,13 +258,32 @@ unit="$(ar "$CLI" codex "$SID" --message 'missing' -- /nonexistent/command 2>&1)
 check "a command that cannot start still delivers" \
   grep -Fq '`/nonexistent/command` could not start.' "$CALLS/codex.last"
 
-# An argument can hold no NUL byte and at most 128 KiB, and the tail is one.
+# The completion message is one argument, which can hold no NUL byte and at most
+# 131071 bytes; codex queue's is 10 bytes longer, starting with --message=.
 reset_calls
 ar "$CLI" codex "$SID" --message 'binary' -- printf 'a\0b\n' >/dev/null 2>&1
 check "a NUL byte in the log tail still delivers" called codex "resume $SID -- binary"
 reset_calls
 ar "$CLI" codex "$SID" --message 'long lines' -- printf '%300000s\n' x >/dev/null 2>&1
 check "a log tail too long for one argument still delivers" called codex "resume $SID -- long lines"
+check "a long log tail fills the message to the argument limit" \
+  test "$(wc -c < "$CALLS/codex.last")" -eq 131061
+reset_calls
+ar env CODEX_EXEC_EXIT=1 CODEX_EXEC_OUTPUT="Error: thread $SID already has an active writer" \
+  "$CLI" codex "$SID" --message 'long queue' -- printf '%300000s\n' x >/dev/null 2>&1
+check "a message at the limit still passes to codex queue" \
+  called codex "queue --thread $SID --message=long queue"
+check "codex queue's --message= argument is at the limit" test "$(wc -c < "$CALLS/codex.last")" -eq 131071
+reset_calls
+ar "$CLI" codex "$SID" --message 'wide' -- python3 -c 'print("\u00e9" * 100000)' >/dev/null 2>&1
+check "a tail of two-byte characters is cut on a character boundary" \
+  python3 -c 'import sys; m = open(sys.argv[1], "rb").read(); m.decode(); sys.exit(not 131060 <= len(m) <= 131061)' \
+  "$CALLS/codex.last"
+reset_calls
+ar "$CLI" codex "$SID" --message 'wide lines' -- python3 -c 'for i in range(50): print(str(i).rjust(1000, "y"))' \
+  >/dev/null 2>&1
+check "forty 1000-character lines are delivered whole" \
+  test "$(awk 'length($0) == 1000' "$CALLS/codex.last" | wc -l)" -eq 40
 
 # A PATH with python3, bash and the fake systemd-run, a non-executable codex, and
 # no claude. It must not reach the real binaries, so it holds nothing else.
