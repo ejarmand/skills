@@ -246,6 +246,14 @@ unit="$(ar "$CLI" codex "$SID" --message 'missing' -- /nonexistent/command 2>&1)
 check "a command that cannot start still delivers" \
   grep -Fq '`/nonexistent/command` could not start.' "$CALLS/codex.last"
 
+# An argument can hold no NUL byte and at most 128 KiB, and the tail is one.
+reset_calls
+ar "$CLI" codex "$SID" --message 'binary' -- printf 'a\0b\n' >/dev/null 2>&1
+check "a NUL byte in the log tail still delivers" called codex "resume $SID -- binary"
+reset_calls
+ar "$CLI" codex "$SID" --message 'long lines' -- printf '%300000s\n' x >/dev/null 2>&1
+check "a log tail too long for one argument still delivers" called codex "resume $SID -- long lines"
+
 # A PATH with python3, bash and the fake systemd-run, a non-executable codex, and
 # no claude. It must not reach the real binaries, so it holds nothing else.
 NOBIN="$TMP/nobin"

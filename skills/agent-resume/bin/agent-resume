@@ -32,6 +32,8 @@ SESSION_VARS = {
     "CLAUDE_CODE_MESSAGING_TOKEN", "CODEX_THREAD_ID",
 }
 TAIL_LINES = 40
+# The tail reaches claude or codex inside one argument, which Linux caps at 128 KiB.
+TAIL_CHARS = 20_000
 UNIT_RE = re.compile(r"agent-resume-[0-9a-f]{8}")
 CODEX_BUSY = "already has an active writer"
 # A tuple, not a set: the rollout's sandbox type may be an unhashable list or object.
@@ -278,6 +280,8 @@ def fire(unit):
             sys.stdout.flush()
             with open(log, errors="replace") as lines:
                 tail = "".join(collections.deque(lines, TAIL_LINES))
+            # An argument cannot hold a NUL byte either.
+            tail = tail[-TAIL_CHARS:].replace("\0", "\ufffd")
             message = completion_message(message, spec["command"], status, tail, log)
         env = {k: v for k, v in spec["env"].items() if k not in SESSION_VARS}
         code = DELIVER[spec["provider"]](spec["session"], message, env, dry_run=False)
