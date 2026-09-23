@@ -126,6 +126,11 @@ echo '{"crossSessionInbound": "accept"}' > "$FAKE_HOME/.claude/settings.json"
 out="$(ar "$CLI" claude "$SID" --time 3h --message x --dry-run 2>&1)"
 check "no warning once crossSessionInbound is accept" \
   bash -c '! grep -Fq crossSessionInbound <<< "$1"' _ "$out"
+echo '["crossSessionInbound"]' > "$FAKE_HOME/.claude/settings.json"
+out="$(ar "$CLI" claude "$SID" --time 3h --message x --dry-run 2>&1)"
+check "a non-object settings file warns instead of failing" \
+  grep -Fq 'crossSessionInbound is not "accept"' <<< "$out"
+echo '{"crossSessionInbound": "accept"}' > "$FAKE_HOME/.claude/settings.json"
 
 # --- permission replay -------------------------------------------------------
 transcript() { # transcript <mode-json-or-empty>
@@ -149,6 +154,11 @@ check "default mode adds no permission flag" grep -Fq -- "--bg -- m)" <<< "$(cla
 transcript ""
 check "transcript without a mode falls back to auto mode" \
   grep -Fq -- "--bg --permission-mode auto -- m" <<< "$(claude_plan)"
+transcript bypassPermissions
+printf '%s\n' '{"permissionMode":["plan"],"cwd":{"dir":"/"}}' \
+  >> "$FAKE_HOME/.claude/projects/-ws/$SID.jsonl"
+check "mistyped last transcript fields fall back to auto mode and no cwd" \
+  grep -Fq -- "(cd . && claude --resume $SID --bg --permission-mode auto -- m)" <<< "$(claude_plan)"
 
 rollout() { # rollout <approval-json> <sandbox-json> [codex-home]
   local day="${3:-$FAKE_HOME/.codex}/sessions/2026/09/22"
@@ -177,6 +187,14 @@ check "unreadable approval policy falls back to --approve-for-me" \
 rollout '"on-request"' '{"type":"external-sandbox"}'
 check "unknown sandbox type falls back to --approve-for-me" \
   grep -Fq -- "--skip-git-repo-check --approve-for-me resume" <<< "$(codex_plan)"
+rollout '"on-request"' '{"type":["read-only"]}'
+check "a non-string sandbox type falls back to --approve-for-me" \
+  grep -Fq -- "--skip-git-repo-check --approve-for-me resume" <<< "$(codex_plan)"
+rollout '"never"' '{"type":"read-only"}'
+printf '%s\n' '{"type":"turn_context","payload":{"cwd":["x"],"approval_policy":"never","sandbox_policy":{"type":"read-only"}}}' \
+  >> "$FAKE_HOME/.codex/sessions/2026/09/22/rollout-2026-09-22T00-00-00-$SID.jsonl"
+check "a non-string turn_context cwd is not replayed" \
+  grep -Fq -- "(cd . && codex exec --skip-git-repo-check -s read-only" <<< "$(codex_plan)"
 rm -rf "$FAKE_HOME/.codex"
 check "missing rollout falls back to --approve-for-me" \
   grep -Fq -- "--skip-git-repo-check --approve-for-me resume" <<< "$(codex_plan)"
@@ -385,6 +403,13 @@ log="$(fire_claude 'job done')"
 wait "$server_pid"; server_pid=
 check "an unreadable key file posts without the auth line" test "$(cat "$TMP/received")" = "$USER_LINE"
 check "an unreadable key file does not resume" not_called claude
+
+serve read
+echo '{"peerToken":5}' > "$key"
+reset_calls
+log="$(fire_claude 'job done')"
+wait "$server_pid"; server_pid=
+check "a non-string peer token posts without the auth line" test "$(cat "$TMP/received")" = "$USER_LINE"
 
 serve reset
 reset_calls
