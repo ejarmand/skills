@@ -2,7 +2,8 @@
 """Send a message to a Claude Code or Codex session when a timer or command finishes.
 
 Each trigger is a `systemd-run --user` transient unit, so it outlives the
-agent's turn, its process, and logout. When it fires, the message goes to the
+agent's turn and its process, and logout too if lingering is on (`loginctl
+enable-linger`), but not a reboot. When it fires, the message goes to the
 live session if one holds the session ID, and resumes the session otherwise.
 """
 import argparse
