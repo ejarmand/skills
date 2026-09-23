@@ -85,7 +85,7 @@ def claude_resume_command(session, message):
         flags = []
     else:
         flags = ["--permission-mode", mode]
-    command = ["claude", "--resume", session, "--bg", *flags, message]
+    command = ["claude", "--resume", session, "--bg", *flags, "--", message]
     return command, cwd if cwd and os.path.isdir(cwd) else None
 
 
@@ -163,14 +163,15 @@ def codex_resume_command(session, message):
         flags = ["-s", sandbox["type"], "-c", f'approval_policy="{approval}"']
         if sandbox.get("network_access") is True:
             flags += ["-c", "sandbox_workspace_write.network_access=true"]
-    command = ["codex", "exec", "--skip-git-repo-check", *flags, "resume", session, message]
+    command = ["codex", "exec", "--skip-git-repo-check", *flags, "resume", session, "--", message]
     cwd = context.get("cwd")
     return command, cwd if cwd and os.path.isdir(cwd) else None
 
 
 def deliver_codex(session, message, env, dry_run):
     resume, cwd = codex_resume_command(session, message)
-    queue = ["codex", "queue", "--thread", session, "--message", message]
+    # clap reads `--message -x` as a flag; the `=` form keeps a leading dash.
+    queue = ["codex", "queue", "--thread", session, f"--message={message}"]
     if dry_run:
         print(f"deliver: (cd {shlex.quote(cwd or '.')} && {shlex.join(resume)})")
         print(f"fallback on '{CODEX_BUSY}': {shlex.join(queue)}")

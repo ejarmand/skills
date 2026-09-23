@@ -105,7 +105,7 @@ check "dry-run logs to the state directory" \
   grep -Fq -- "StandardOutput=append:$FAKE_HOME/.local/state/agent-resume/agent-resume-" <<< "$out"
 check "claude dry-run reports no live socket" grep -Fq "no live socket for $SID" <<< "$out"
 check "claude dry-run shows the --bg resume fallback" \
-  grep -Fq "claude --resume $SID --bg --dangerously-skip-permissions 'look at PRs'" <<< "$out"
+  grep -Fq "claude --resume $SID --bg --dangerously-skip-permissions -- 'look at PRs'" <<< "$out"
 check "claude trigger warns about crossSessionInbound" grep -Fq 'crossSessionInbound is not "accept"' <<< "$out"
 check "dry-run runs nothing" not_called systemd-run
 check "dry-run writes no state" test ! -e "$FAKE_HOME/.local/state"
@@ -113,7 +113,8 @@ check "dry-run writes no state" test ! -e "$FAKE_HOME/.local/state"
 out="$(ar "$CLI" codex "$SID" --message 'address any errors' --dry-run -- make test 2>&1)"
 check "command dry-run has no timer" bash -c '! grep -Fq -- --on-active <<< "$1"' _ "$out"
 check "codex dry-run shows exec resume" grep -Fq "codex exec --skip-git-repo-check" <<< "$out"
-check "codex dry-run shows the queue fallback" grep -Fq "codex queue --thread $SID --message" <<< "$out"
+check "codex dry-run shows the queue fallback" \
+  grep -Fq "codex queue --thread $SID '--message=address any errors" <<< "$out"
 check "command dry-run shows the completion message shape" \
   grep -Fq 'agent-resume: `make test` exited with status <status>.' <<< "$out"
 check "codex trigger does not warn about crossSessionInbound" \
@@ -137,16 +138,16 @@ claude_plan() { ar "$CLI" claude "$SID" --time 1h --message m --dry-run 2>/dev/n
 
 transcript bypassPermissions
 check "bypassPermissions replays --dangerously-skip-permissions" \
-  grep -Fq -- "--bg --dangerously-skip-permissions m" <<< "$(claude_plan)"
+  grep -Fq -- "--bg --dangerously-skip-permissions -- m" <<< "$(claude_plan)"
 transcript acceptEdits
 check "acceptEdits replays --permission-mode acceptEdits" \
-  grep -Fq -- "--bg --permission-mode acceptEdits m" <<< "$(claude_plan)"
+  grep -Fq -- "--bg --permission-mode acceptEdits -- m" <<< "$(claude_plan)"
 check "claude resume runs in the transcript cwd" grep -Fq "(cd $WS && claude" <<< "$(claude_plan)"
 transcript default
-check "default mode adds no permission flag" grep -Fq -- "--bg m)" <<< "$(claude_plan)"
+check "default mode adds no permission flag" grep -Fq -- "--bg -- m)" <<< "$(claude_plan)"
 transcript ""
 check "transcript without a mode falls back to skip-permissions" \
-  grep -Fq -- "--bg --dangerously-skip-permissions m" <<< "$(claude_plan)"
+  grep -Fq -- "--bg --dangerously-skip-permissions -- m" <<< "$(claude_plan)"
 
 rollout() { # rollout <approval-json> <sandbox-json>
   mkdir -p "$FAKE_HOME/.codex/sessions/2026/09/22" || exit 1
@@ -160,7 +161,7 @@ codex_plan() { ar "$CLI" codex "$SID" --time 1h --message m --dry-run 2>/dev/nul
 
 rollout '"never"' '{"type":"danger-full-access"}'
 check "never + danger-full-access replays the bypass flag" \
-  grep -Fq -- "--skip-git-repo-check --dangerously-bypass-approvals-and-sandbox resume $SID m" <<< "$(codex_plan)"
+  grep -Fq -- "--skip-git-repo-check --dangerously-bypass-approvals-and-sandbox resume $SID -- m" <<< "$(codex_plan)"
 rollout '"on-request"' '{"type":"workspace-write","network_access":true}'
 check "last turn_context replays -s and approval_policy" \
   grep -Fq -- "-s workspace-write -c 'approval_policy=\"on-request\"' -c sandbox_workspace_write.network_access=true resume" <<< "$(codex_plan)"
@@ -199,7 +200,7 @@ check "the trigger's state file is removed after firing" test ! -e "$STATE/$unit
 reset_calls
 ar env CODEX_EXEC_EXIT=1 CODEX_EXEC_OUTPUT="Error: thread $SID already has an active writer" \
   "$CLI" codex "$SID" --message 'queued' -- true >/dev/null 2>&1
-check "an active writer falls back to codex queue" called codex "queue --thread $SID --message queued"
+check "an active writer falls back to codex queue" called codex "queue --thread $SID --message=queued"
 
 reset_calls
 ar env CODEX_EXEC_EXIT=1 CODEX_EXEC_OUTPUT="Error: model overloaded" \
@@ -221,24 +222,39 @@ mkdir -p "$FAKE_HOME/.codex/sessions/2026/09/22/rollout-2026-09-22T00-00-00-$SID
 reset_calls
 unit="$(ar "$CLI" codex "$SID" --time 1s --message 'still here' 2>&1)"
 check "an unreadable rollout still delivers with the bypass flag" \
-  called codex "--dangerously-bypass-approvals-and-sandbox resume $SID still here"
+  called codex "--dangerously-bypass-approvals-and-sandbox resume $SID -- still here"
 check "an unreadable rollout is logged" grep -Fq 'unreadable rollout' "$STATE/$unit.log"
 rm -rf "$FAKE_HOME/.codex"
+
+reset_calls
+ar "$CLI" codex "$SID" --time 1s --message='-x marks the spot' >/dev/null 2>&1
+check "codex resume passes a leading-dash message after --" \
+  called codex "resume $SID -- -x marks the spot"
+reset_calls
+ar env CODEX_EXEC_EXIT=1 CODEX_EXEC_OUTPUT="Error: thread $SID already has an active writer" \
+  "$CLI" codex "$SID" --time 1s --message='--help me' >/dev/null 2>&1
+check "codex queue passes a leading-dash message as --message=" \
+  called codex "queue --thread $SID --message=--help me"
 
 # --- claude adapter ----------------------------------------------------------
 reset_calls
 transcript bypassPermissions
 ar env CLAUDE_CODE_SESSION_ID=caller "$CLI" claude "$SID" --time 1s --message 'wake up' >/dev/null 2>&1
 check "no live session resumes with --bg" \
-  called claude "--resume $SID --bg --dangerously-skip-permissions wake up"
+  called claude "--resume $SID --bg --dangerously-skip-permissions -- wake up"
 check "claude resume runs in the transcript cwd" test "$(cat "$CALLS/claude.cwd")" = "$WS"
+
+reset_calls
+ar "$CLI" claude "$SID" --time 1s --message='--look at PRs' >/dev/null 2>&1
+check "claude resume passes a leading-dash message after --" \
+  called claude "--resume $SID --bg --dangerously-skip-permissions -- --look at PRs"
 
 transcript_path="$FAKE_HOME/.claude/projects/-ws/$SID.jsonl"
 rm -f "$transcript_path" && mkdir "$transcript_path" || exit 1
 reset_calls
 unit="$(ar "$CLI" claude "$SID" --time 1s --message 'still here' 2>&1)"
 check "an unreadable transcript still resumes with skip-permissions" \
-  called claude "--resume $SID --bg --dangerously-skip-permissions still here"
+  called claude "--resume $SID --bg --dangerously-skip-permissions -- still here"
 check "an unreadable transcript is logged" grep -Fq 'unreadable transcript' "$STATE/$unit.log"
 
 sessions="$FAKE_HOME/.claude/sessions"
@@ -323,7 +339,7 @@ check "a reset post does not start a copy with --resume" not_called claude
 reset_calls
 ar "$CLI" claude "$SID" --time 1s --message 'socket gone' >/dev/null 2>&1
 check "a dead process falls back to --bg resume" \
-  called claude "--resume $SID --bg --dangerously-skip-permissions socket gone"
+  called claude "--resume $SID --bg --dangerously-skip-permissions -- socket gone"
 
 rm -rf "$sessions"/*.json
 printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":"%s"}\n' "$$" "$SID" "$TMP/none.sock" \
@@ -331,7 +347,7 @@ printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":"%s"}\n' "$$" "$SID" "$
 reset_calls
 unit="$(ar "$CLI" claude "$SID" --time 1s --message 'nobody listening' 2>&1)"
 check "a live pid with no listening inbox falls back to --bg resume" \
-  called claude "--resume $SID --bg --dangerously-skip-permissions nobody listening"
+  called claude "--resume $SID --bg --dangerously-skip-permissions -- nobody listening"
 check "the missing inbox is logged" grep -Fq "no inbox is listening" "$STATE/$unit.log"
 
 # --- list and cancel ---------------------------------------------------------
