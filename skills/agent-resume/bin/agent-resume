@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""Send a message to a Claude Code or Codex session when a timer or command finishes.
+
+Each trigger is a `systemd-run --user` transient unit, so it outlives the
+agent's turn and its process, and logout too if lingering is on (`loginctl
+enable-linger`), but not a reboot. When it fires, the message goes to the
+live session if one holds the session ID, and resumes the session otherwise.
+"""
+import argparse
+import collections
+import datetime
+import hashlib
+import json
+import os
+import re
+import secrets
+import shlex
+import socket
+import subprocess
+import sys
+import traceback
+from pathlib import Path
+
+HOME = Path.home()
+STATE = HOME / ".local/state/agent-resume"
+SESSION_ENV = {"claude": "CLAUDE_CODE_SESSION_ID", "codex": "CODEX_THREAD_ID"}
+# Variables that bind a process to the session that scheduled the trigger. The
+# resumed session gets the caller's environment without them.
+SESSION_VARS = {
+    "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED", "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN", "CODEX_THREAD_ID",
+}
+TAIL_LINES = 40
+# The completion message reaches claude or codex as one argument, and Linux caps
+# an argument at MAX_ARG_STRLEN, 131072 bytes counting its NUL. `codex queue`
+# prefixes it with --message=.
+MESSAGE_BYTES = 131072 - 1 - len("--message=")
+UNIT_RE = re.compile(r"agent-resume-[0-9a-f]{8}")
+CODEX_BUSY = "already has an active writer"
+# A tuple, not a set: the rollout's sandbox type may be an unhashable list or object.
+CODEX_SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
+
+
+def claude_live_sockets(session):
+    """(socket path, peer token or None) for each live process registered for the session.
+
+    Stale entries stay in the registry, so there can be several.
+    """
+    live = []
+    for entry in sorted((HOME / ".claude/sessions").glob("*.json")):
+        try:
+            info = json.loads(entry.read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(info, dict) or info.get("sessionId") != session:
+            continue
+        sock, pid = info.get("messagingSocketPath"), info.get("pid")
+        # A malformed entry is skipped like an unreadable one; raising here
+        # would lose the trigger's message.
+        if not isinstance(sock, str) or not sock or type(pid) is not int:
+            continue
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except OSError:
+            continue  # no such process
+        # procStart is field 22 of /proc/<pid>/stat when the entry was written;
+        # Claude Code reads a mismatch as a recycled PID, and so does this.
+        start = info.get("procStart")
+        if isinstance(start, str) and stat[stat.rindex(")") + 2:].split(" ")[19] != start:
+            continue
+        key = entry.parent / f"{pid}.{hashlib.sha256(sock.encode()).hexdigest()}.key"
+        try:
+            token = json.loads(key.read_text())["peerToken"]
+        except (OSError, ValueError, KeyError, TypeError):
+            token = None
+        live.append((sock, token if isinstance(token, str) else None))
+    return live
+
+
+def claude_resume_command(session, message):
+    """`claude --resume --bg` replaying the transcript's last permission mode, plus its cwd."""
+    mode = cwd = None
+    for transcript in (HOME / ".claude/projects").glob(f"*/{session}.jsonl"):
+        try:
+            with open(transcript, errors="replace") as lines:
+                for line in lines:
+                    if '"cwd"' not in line and '"permissionMode"' not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    mode = record.get("permissionMode", mode)
+                    cwd = record.get("cwd", cwd)
+        except OSError as error:
+            print(f"agent-resume: unreadable transcript: {error}", file=sys.stderr)
+            mode = cwd = None
+    if not isinstance(mode, str):
+        print(f"agent-resume: no readable permission mode for {session}; resuming in auto mode",
+              file=sys.stderr)
+        flags = ["--permission-mode", "auto"]
+    elif mode == "bypassPermissions":
+        flags = ["--dangerously-skip-permissions"]
+    elif mode == "default":
+        flags = []
+    else:
+        flags = ["--permission-mode", mode]
+    command = ["claude", "--resume", session, "--bg", *flags, "--", message]
+    return command, cwd if isinstance(cwd, str) and os.path.isdir(cwd) else None
+
+
+def deliver_claude(session, message, env, dry_run):
+    live = claude_live_sockets(session)
+    if dry_run:
+        resume, cwd = claude_resume_command(session, message)
+        for path, _ in live:
+            print(f"deliver: post to live socket {path}")
+        if not live:
+            print(f"deliver: no live socket for {session} (checked again when the trigger fires)")
+        print(f"fallback: (cd {shlex.quote(cwd or '.')} && {shlex.join(resume)})")
+        return 0
+    # Resuming while any entry's inbox might be the live session would start a
+    # copy of it, so every entry is tried first.
+    for path, token in live:
+        lines = [{"type": "user", "message": {"role": "user", "content": message}}]
+        if token:
+            lines.insert(0, {"type": "auth", "token": token})
+        else:
+            # Claude Code 2.1.280 requires the auth line only on Windows, and its
+            # own peer sender also posts without one when the key file is missing.
+            print(f"agent-resume: no readable peer token for {path}; posting without the auth line",
+                  file=sys.stderr)
+        try:
+            with socket.socket(socket.AF_UNIX) as conn:
+                conn.settimeout(5)
+                conn.connect(path)
+                conn.sendall("".join(json.dumps(line) + "\n" for line in lines).encode())
+                conn.shutdown(socket.SHUT_WR)
+                # The inbox never replies; crossSessionInbound decides later whether
+                # the message is delivered or held. A clean close means it read the lines.
+                while conn.recv(4096):
+                    pass
+            print(f"agent-resume: posted to {path}")
+            return 0
+        except (FileNotFoundError, ConnectionRefusedError) as error:
+            print(f"agent-resume: {path}: {error}; no inbox is listening there", file=sys.stderr)
+        except OSError as error:
+            # The session is live, and `claude --resume --bg` on a live session
+            # starts a copy of it rather than reaching it.
+            print(f"agent-resume: posting to {path} failed: {error}; not resuming the live "
+                  f"session {session}, so the message was not delivered", file=sys.stderr)
+            return 1
+    resume, cwd = claude_resume_command(session, message)
+    print(f"agent-resume: {shlex.join(resume[:-1])} <message>", flush=True)
+    return subprocess.run(resume, cwd=cwd, env=env, stdin=subprocess.DEVNULL).returncode
+
+
+def codex_resume_command(session, message, env):
+    """`codex exec resume` replaying the rollout's last turn_context policy, plus its cwd."""
+    context = {}
+    sessions = Path(env.get("CODEX_HOME") or HOME / ".codex") / "sessions"
+    for rollout in sessions.glob(f"**/rollout-*{session}.jsonl"):
+        try:
+            with open(rollout, errors="replace") as lines:
+                for line in lines:
+                    if '"turn_context"' not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(record, dict):
+                        continue
+                    if record.get("type") == "turn_context" and isinstance(record.get("payload"), dict):
+                        context = record["payload"]
+        except OSError as error:
+            print(f"agent-resume: unreadable rollout: {error}", file=sys.stderr)
+            context = {}
+    approval = context.get("approval_policy")
+    sandbox = context.get("sandbox_policy")
+    if not isinstance(sandbox, dict):
+        sandbox = {}
+    if not isinstance(approval, str) or sandbox.get("type") not in CODEX_SANDBOXES:
+        print(f"agent-resume: no readable approval policy for {session} under {sessions}; "
+              "resuming with --approve-for-me", file=sys.stderr)
+        flags = ["--approve-for-me"]
+    elif approval == "never" and sandbox["type"] == "danger-full-access":
+        flags = ["--dangerously-bypass-approvals-and-sandbox"]
+    else:
+        flags = ["-s", sandbox["type"], "-c", f'approval_policy="{approval}"']
+        if sandbox["type"] == "workspace-write":
+            # Always pass both, so the current config cannot widen what the
+            # session recorded; an unreadable value replays as the narrowest.
+            network = "true" if sandbox.get("network_access") is True else "false"
+            roots = sandbox.get("writable_roots")
+            if not (isinstance(roots, list) and all(isinstance(root, str) for root in roots)):
+                roots = []
+            # A JSON array of strings is a TOML array; ensure_ascii would emit
+            # surrogate-pair escapes, which TOML rejects.
+            flags += ["-c", f"sandbox_workspace_write.network_access={network}",
+                      "-c", "sandbox_workspace_write.writable_roots="
+                      + json.dumps(roots, ensure_ascii=False)]
+    command = ["codex", "exec", "--skip-git-repo-check", *flags, "resume", session, "--", message]
+    cwd = context.get("cwd")
+    return command, cwd if isinstance(cwd, str) and os.path.isdir(cwd) else None
+
+
+def deliver_codex(session, message, env, dry_run):
+    resume, cwd = codex_resume_command(session, message, env)
+    # clap reads `--message -x` as a flag; the `=` form keeps a leading dash.
+    queue = ["codex", "queue", "--thread", session, f"--message={message}"]
+    if dry_run:
+        print(f"deliver: (cd {shlex.quote(cwd or '.')} && {shlex.join(resume)})")
+        print(f"fallback on '{CODEX_BUSY}': {shlex.join(queue)}")
+        return 0
+    print(f"agent-resume: {shlex.join(resume[:-1])} <message>", flush=True)
+    result = subprocess.run(resume, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    if result.returncode == 0 or CODEX_BUSY not in result.stdout + result.stderr:
+        return result.returncode
+    print("agent-resume: thread is loaded elsewhere; queueing instead", flush=True)
+    return subprocess.run(queue, cwd=cwd, env=env, stdin=subprocess.DEVNULL).returncode
+
+
+DELIVER = {"claude": deliver_claude, "codex": deliver_codex}
+
+
+def completion_message(message, command, status, tail, log):
+    return (f"{message}\n\n"
+            f"agent-resume: `{shlex.join(command)}` {status}.\n"
+            f"Log: {log}\n"
+            f"Last {TAIL_LINES} log lines:\n{tail}")
+
+
+def schedule(args, command):
+    session = args.session or os.environ.get(SESSION_ENV[args.action])
+    if not session:
+        sys.exit(f"agent-resume: no session ID given and {SESSION_ENV[args.action]} is not set")
+    if bool(args.time) == bool(command):
+        sys.exit("agent-resume: give exactly one of --time or a command after --")
+    unit = f"agent-resume-{secrets.token_hex(4)}"
+    log = STATE / f"{unit}.log"
+    cwd = os.getcwd()
+    run = ["systemd-run", "--user", f"--unit={unit}",
+           f"--description=agent-resume {args.action} {session}", "--collect", "--quiet",
+           # No --working-directory: systemd will not start a unit whose directory
+           # is gone, losing the message. fire() runs the command in cwd instead.
+           f"--property=StandardOutput=append:{log}", f"--property=StandardError=append:{log}"]
+    if args.time:
+        run.append(f"--on-active={args.time}")
+    run += ["--", sys.executable, os.path.realpath(__file__), "_fire", unit]
+    if args.action == "claude":
+        settings = HOME / ".claude/settings.json"
+        try:
+            inbound = json.loads(settings.read_text()).get("crossSessionInbound")
+        except (OSError, ValueError, AttributeError):
+            inbound = None
+        if inbound != "accept":
+            print(f'agent-resume: warning: crossSessionInbound is not "accept" in {settings}; '
+                  "a bypassPermissions session will hold this message for approval "
+                  "(scripts/link-skills.sh offers to set it)", file=sys.stderr)
+    if args.dry_run:
+        print(shlex.join(run))
+        message = args.message if args.time else completion_message(
+            args.message, command, "exited with status <status>", "<log tail>", log)
+        return DELIVER[args.action](session, message, os.environ, dry_run=True)
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    spec = STATE / f"{unit}.json"
+    with open(os.open(spec, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as out:
+        json.dump({"provider": args.action, "session": session, "message": args.message,
+                   "time": args.time, "command": command, "cwd": cwd,
+                   "created": datetime.datetime.now().isoformat(timespec="seconds"),
+                   "env": dict(os.environ)}, out)
+    try:
+        subprocess.run(run, check=True)
+    except BaseException:
+        spec.unlink()
+        raise
+    print(unit)
+    return 0
+
+
+def fire(unit):
+    spec_path = STATE / f"{unit}.json"
+    spec = json.loads(spec_path.read_text())
+    message = spec["message"]
+    try:
+        if spec["command"]:
+            log = STATE / f"{unit}.log"
+            try:
+                code = subprocess.run(spec["command"], cwd=spec["cwd"], env=spec["env"]).returncode
+                status = f"exited with status {code}" if code >= 0 else f"was killed by signal {-code}"
+            except OSError as error:
+                print(f"agent-resume: {error}", file=sys.stderr, flush=True)
+                status = "could not start"
+            sys.stdout.flush()
+            with open(log, errors="replace") as lines:
+                # An argument cannot hold a NUL byte either.
+                tail = "".join(collections.deque(lines, TAIL_LINES)).replace("\0", "\ufffd")
+            # Keep as much of the tail's end as fits; a character cut in half is dropped.
+            # os.fsencode encodes the message the way subprocess will.
+            room = MESSAGE_BYTES - len(os.fsencode(
+                completion_message(message, spec["command"], status, "", log)))
+            tail = os.fsencode(tail)[-room:].decode(errors="ignore") if room > 0 else ""
+            message = completion_message(message, spec["command"], status, tail, log)
+        env = {k: v for k, v in spec["env"].items() if k not in SESSION_VARS}
+        code = DELIVER[spec["provider"]](spec["session"], message, env, dry_run=False)
+        error = f"exit status {code}"
+    except Exception as exc:
+        # Nothing retries a trigger, so the unit log is the message's last copy.
+        sys.stdout.flush()
+        traceback.print_exc()
+        code, error = 1, f"{type(exc).__name__}: {exc}"
+    finally:
+        spec_path.unlink()
+    if code:
+        sys.stdout.flush()
+        print(f"agent-resume: delivery failed ({error}); the undelivered message follows:\n{message}",
+              file=sys.stderr)
+    return code
+
+
+def list_triggers():
+    units = subprocess.run(
+        ["systemctl", "--user", "list-units", "--all", "--plain", "--no-legend", "agent-resume-*"],
+        capture_output=True, text=True, check=True).stdout
+    active = {line.split()[0] for line in units.splitlines() if line.split()[2:3] == ["active"]}
+    for spec_path in sorted(STATE.glob("agent-resume-*.json")):
+        unit = spec_path.stem
+        spec = json.loads(spec_path.read_text())
+        state = ("running" if f"{unit}.service" in active else
+                 "waiting" if f"{unit}.timer" in active else "gone")
+        trigger = f"after {spec['time']}" if spec["time"] else f"on exit of {shlex.join(spec['command'])}"
+        print(f"{unit}\t{state}\t{spec['provider']} {spec['session']}\t"
+              f"{trigger} (from {spec['created']})\t{spec['message']}")
+    return 0
+
+
+def cancel(unit):
+    if not UNIT_RE.fullmatch(unit):
+        sys.exit(f"agent-resume: not a trigger ID: {unit}")
+    subprocess.run(["systemctl", "--user", "stop", f"{unit}.*"], check=True)
+    spec = STATE / f"{unit}.json"
+    if spec.exists():
+        spec.unlink()
+    print(f"cancelled {unit}")
+    return 0
+
+
+def main(argv):
+    command = []
+    if "--" in argv:
+        split = argv.index("--")
+        argv, command = argv[:split], argv[split + 1:]
+    parser = argparse.ArgumentParser(
+        prog="agent-resume", description=__doc__.splitlines()[0],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="examples:\n"
+               "  agent-resume codex --time 3h --message 'look at new PRs on the repo'\n"
+               "  agent-resume claude --message 'address any errors' -- make test\n"
+               "  agent-resume list\n"
+               "  agent-resume cancel agent-resume-1a2b3c4d")
+    actions = parser.add_subparsers(dest="action", required=True,
+                                    metavar="{claude,codex,list,cancel}")
+    for provider, variable in SESSION_ENV.items():
+        sub = actions.add_parser(provider, help=f"message a {provider} session on a trigger")
+        sub.add_argument("session", nargs="?", help=f"session ID (default: ${variable})")
+        sub.add_argument("--time", help="systemd time span to wait, e.g. 3h or 90min")
+        sub.add_argument("--message", required=True, help="message to send when the trigger fires")
+        sub.add_argument("--dry-run", action="store_true",
+                         help="print the systemd and delivery commands without running them")
+    actions.add_parser("list", help="list pending and running triggers")
+    actions.add_parser("cancel", help="stop a trigger").add_argument("trigger_id")
+    actions.add_parser("_fire").add_argument("unit")
+    args = parser.parse_args(argv)
+    if command and args.action not in SESSION_ENV:
+        parser.error("only claude and codex take a command after --")
+    if args.action in SESSION_ENV:
+        return schedule(args, command)
+    if args.action == "list":
+        return list_triggers()
+    if args.action == "cancel":
+        return cancel(args.trigger_id)
+    return fire(args.unit)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

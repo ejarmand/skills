@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Resume"
+  short_description: "Message a session when a job ends or a timer fires"
+  default_prompt: "Use $agent-resume to have this session resumed when the job finishes or after a delay."
