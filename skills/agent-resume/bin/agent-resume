@@ -42,16 +42,20 @@ def claude_live_socket(session):
             info = json.loads(entry.read_text())
         except (OSError, ValueError):
             continue
-        sock = info.get("messagingSocketPath")
-        if info.get("sessionId") != session or not sock:
+        if not isinstance(info, dict) or info.get("sessionId") != session:
+            continue
+        sock, pid = info.get("messagingSocketPath"), info.get("pid")
+        # A malformed entry is skipped like an unreadable one; raising here
+        # would lose the trigger's message.
+        if not isinstance(sock, str) or not sock or type(pid) is not int:
             continue
         try:
-            os.kill(info["pid"], 0)
-        except ProcessLookupError:
+            os.kill(pid, 0)
+        except (ProcessLookupError, OverflowError):
             continue
         except PermissionError:
             pass
-        key = entry.parent / f"{info['pid']}.{hashlib.sha256(sock.encode()).hexdigest()}.key"
+        key = entry.parent / f"{pid}.{hashlib.sha256(sock.encode()).hexdigest()}.key"
         try:
             token = json.loads(key.read_text())["peerToken"]
         except (OSError, ValueError, KeyError, TypeError):

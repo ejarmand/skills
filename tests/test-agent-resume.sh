@@ -298,6 +298,14 @@ echo '{"peerToken":"0123456789abcdef0123456789abcdef"}' > "$key"
 printf '{"pid":999999999,"sessionId":"%s","messagingSocketPath":"/nonexistent.sock"}\n' \
   "$SID" > "$sessions/999999999.json"
 mkdir -p "$sessions/1.json" || exit 1
+# Malformed entries for $SID, named to sort before the live one, must be skipped
+# too: a non-object, a missing or non-integer pid, a non-string socket path.
+echo '["not an object"]' > "$sessions/0a.json"
+printf '{"sessionId":"%s","messagingSocketPath":"%s"}\n' "$SID" "$SOCK" > "$sessions/0b.json"
+printf '{"pid":"%s","sessionId":"%s","messagingSocketPath":"%s"}\n' "$$" "$SID" "$SOCK" \
+  > "$sessions/0c.json"
+printf '{"pid":%s,"sessionId":"%s","messagingSocketPath":["%s"]}\n' "$$" "$SID" "$SOCK" \
+  > "$sessions/0d.json"
 out="$(ar "$CLI" claude "$SID" --time 1s --message x --dry-run 2>&1)"
 check "claude dry-run finds the live socket" grep -Fq "deliver: post to live socket $SOCK" <<< "$out"
 reset_calls
@@ -307,6 +315,7 @@ check "live session gets the auth line then the user message" \
   test "$(cat "$TMP/received")" = '{"type": "auth", "token": "0123456789abcdef0123456789abcdef"}'$'\n'"$USER_LINE"
 check "a live post is logged" grep -Fqx "agent-resume: posted to $SOCK" "$log"
 check "a live session is not also resumed" not_called claude
+check "malformed registry entries do not fail the trigger" test "$(cat "$CALLS/fire.status")" -eq 0
 check "the live socket is tried before the unreadable transcript is read" \
   bash -c '! grep -Fq "unreadable transcript" "$1"' _ "$log"
 rmdir "$transcript_path" || exit 1
