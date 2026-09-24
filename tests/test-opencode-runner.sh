@@ -30,6 +30,10 @@ FAKE
 
 cat > "$FAKE_BIN/bwrap" <<'FAKE'
 #!/usr/bin/env bash
+if [ "${1:-}" = --help ]; then
+  echo '  --disable-userns'
+  exit 0
+fi
 printf '%s\n' "$@" > "$BWRAP_ARGS"
 exit "${FAKE_BWRAP_EXIT:-0}"
 FAKE
@@ -93,12 +97,21 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 rm -f "$TMP/bwrap.args"
 rc=0
 run_runner --workspace "$WS" --profile github-pr-reviewer \
-  --model openrouter/example-model --variant high -- "review issue 18" || rc=$?
+  --model openrouter/example-model --variant high --agent spec -- "review issue 18" || rc=$?
 [ "$rc" -eq 0 ] || fail "variant dispatch exited $rc (want 0)"
+awk 'previous == "--agent" && $0 == "spec" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
+  && pass "runner forwards the selected agent alongside the variant" || fail "selected agent missing"
 awk 'previous == "--variant" && $0 == "high" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
   && pass "runner forwards the requested model variant" || fail "model variant missing"
 [ "$(tail -n 2 "$TMP/bwrap.args" | head -n 1)" = -- ] \
   && pass "variant stays before the prompt boundary" || fail "variant reached the prompt"
+
+rm -f "$TMP/bwrap.args"
+rc=0
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model --variant "" -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 2 ] && [ ! -f "$TMP/bwrap.args" ] \
+  && pass "empty explicit variant is refused before launch" || fail "empty variant refusal: rc=$rc"
 
 # The profile carries one reviewer identity across the complete hierarchy.
 [ "$(jq -r '.agent | keys | sort | join(",")' "$PROFILE")" = "reviewer,spec,standards" ] \
