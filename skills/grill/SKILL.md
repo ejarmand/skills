@@ -17,6 +17,7 @@ Move through the decision tree in rounds, resolving dependencies between decisio
 Rules of thumb:
 
 - Questions in the same round don't depend on each other
+- Present questions in a way that the user has the information to avoid decision anergy (e.g. two reasonable answers locking in an inelegant spec)
 - Questions should address exactly one concern
 - If a *fact* can be found by exploring the environment (filesystem, tools, etc.), look it up rather than asking me.
 - Do not act on it until I confirm we have reached a shared understanding.
