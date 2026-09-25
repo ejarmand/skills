@@ -9,24 +9,28 @@ maps the complete collection.
 ### Routing and implementation flow
 
 - `skill-router` — choose the right skill or flow
-- `grill-with-docs` — sharpen a codebase-backed idea and retain decisions
-- `grilling` — shared interview primitive
+- `same-page` — agree on the goal and scope with the user before planning
+- `grill` — interview the user about a plan until you share one understanding
 - `handoff` — carry context into a fresh session
 - `prototype` — answer one design question with throwaway code
-- `to-spec` — turn a conversation into a buildable spec
-- `to-tickets` — split a spec into ordered tracer-bullet tickets
-- `implement` — run the TDD and verification sequence
+- `to-spec` — turn a conversation into a spec and publish it as a GitHub issue
+- `to-tickets` — split a spec into tracer-bullet GitHub issues linked by
+  their blockers
+- `implement` — build a prepared spec or ticket test-first and commit the
+  verified result
 - `tdd` — build behavior in red → green slices
 - `code-review` — review Standards and Spec as separate axes
 
 ### On-ramps and codebase health
 
 - `diagnosing-bugs` — establish a reproducer, diagnose, and regression-test
-- `wayfinder` — resolve decision-heavy, multi-session efforts
+- `wayfinder` — map a multi-session effort as GitHub decision issues and
+  resolve them one at a time
 - `codebase-design` — shared deep-module vocabulary
 - `domain-modeling` — sharpen domain language and decisions
 - `improve-codebase-architecture` — find and present deepening opportunities
-- `research` — delegate primary-source reading into a cited repository note
+- `laziness-protocol` — prefer deletion and the smallest diff that solves the
+  problem
 - `fix-steering` — audit session corrections and recommend prevention changes
 
 ### Teaching and visualization
@@ -35,11 +39,13 @@ maps the complete collection.
 - `bro` — restate the last response in plain, concise language
 - `unslop` — remove AI writing patterns and improve legibility
 - `writing-great-skills` — reference for authoring and editing skills
-- `html-visualization` — render, screenshot, and critique browser-based reports
+- `html-visualization` — build HTML diagrams, process maps, timelines, and
+  interactive explainers, checking each render with screenshots
 
 ### Agent and review orchestration
 
-- `batch-subagents` — fan out independent Codex/Luna workers in one shell call
+- `batch-subagents` — fan out many independent CLI agent workers in one shell
+  call
 - `claude-agent` — execute and resume independent headless Claude Code work
 - `codex-agent` — execute and resume independent Codex CLI work
 - `cursor-agent` — execute and resume independent Cursor Agent work
@@ -69,14 +75,19 @@ BIN_DIR=/path/to/bin \
   scripts/link-skills.sh
 ```
 
+If a link name is already taken by a real file or directory, such as a copy
+from an older install, the installer lists every such path and asks once before
+deleting them all and linking in their place. Pass `--yes` to delete without
+asking. Without a terminal and without `--yes`, it exits before linking or
+deleting anything.
+
 On a terminal, and without `--yes`, the installer then offers to set
 `crossSessionInbound` to `"accept"` in `~/.claude/settings.json`
 (`CLAUDE_SETTINGS_FILE` overrides the path) so `agent-resume` messages reach
 bypass-permissions Claude sessions without approval.
 
-The installer refuses to replace a real file or directory. Its hermetic smoke
-test uses temporary destinations and does not mutate a developer's installed
-skills:
+The hermetic tests use temporary destinations and do not touch a developer's
+installed skills:
 
 ```bash
 tests/test-inventory.sh
