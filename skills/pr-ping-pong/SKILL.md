@@ -117,6 +117,9 @@ comment is a failed review.
 Dispatch duplicate model entries sequentially so each has its own before and
 after snapshot. Do not count a failed review toward Pass.
 
+Wrap every reviewer dispatch in `timeout` (45 minutes is ample). Reviewer CLIs
+can hang without output, and a timed-out review is a failed review.
+
 
 * note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
 clean-tree verification. When using it run reviewers sequentially, or pin one checkout per

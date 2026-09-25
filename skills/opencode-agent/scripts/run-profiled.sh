@@ -6,20 +6,24 @@
 # only credential setup; OpenCode state is disposable.
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME \
-#   --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] -- "PROMPT"
+#   --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] \
+#   [--idle-timeout SECONDS] -- "PROMPT"
 #
 # --agent selects the profile's primary agent (default: reviewer).
 # --variant passes a provider-specific reasoning setting through unchanged.
+# --idle-timeout stops a run that emits no event for that long (default 600)
+# and exits EX_STALL; OpenCode can otherwise hang indefinitely (#53).
 
 set -u -o pipefail
 
 EX_USAGE=2
 EX_CLEANUP=70
 EX_SETUP=71
+EX_STALL=75
 
 err() { printf 'run-profiled: %s\n' "$*" >&2; }
 usage() {
-  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] -- "PROMPT"'
+  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] [--idle-timeout SECONDS] -- "PROMPT"'
   exit "$EX_USAGE"
 }
 
@@ -28,6 +32,7 @@ profile=""
 model=""
 variant=""
 agent="reviewer"
+idle_timeout=600
 while [ $# -gt 0 ]; do
   case "$1" in
     --workspace) [ $# -ge 2 ] || usage; workspace="$2"; shift 2 ;;
@@ -35,6 +40,7 @@ while [ $# -gt 0 ]; do
     --model)     [ $# -ge 2 ] || usage; model="$2"; shift 2 ;;
     --variant)   [ $# -ge 2 ] && [ -n "$2" ] || usage; variant="$2"; shift 2 ;;
     --agent)     [ $# -ge 2 ] || usage; agent="$2"; shift 2 ;;
+    --idle-timeout) [ $# -ge 2 ] || usage; idle_timeout="$2"; shift 2 ;;
     --) shift; break ;;
     -h|--help) usage ;;
     *) usage ;;
@@ -48,7 +54,7 @@ prompt="$1"
 case "$workspace" in /*) ;; *) err "workspace must be absolute: $workspace"; exit "$EX_USAGE" ;; esac
 case "$model" in */*) ;; *) err "model must use provider/model form: $model"; exit "$EX_USAGE" ;; esac
 case "$variant" in ""|[a-z]*) ;; *) err "variant must be a plain word: $variant"; exit "$EX_USAGE" ;; esac
-case "$agent" in [a-z]*) ;; *) err "agent must be a plain word: $agent"; exit "$EX_USAGE" ;; esac
+case "$idle_timeout" in ""|0|*[!0-9]*) err "idle timeout must be a positive integer: $idle_timeout"; exit "$EX_USAGE" ;; esac
 variant_args=()
 [ -z "$variant" ] || variant_args=(--variant "$variant")
 [ "$(uname -s)" = Linux ] || { err 'profiled OpenCode dispatch requires Linux'; exit "$EX_SETUP"; }
@@ -60,6 +66,11 @@ skill_dir="$(dirname "$script_dir")"
 repo_skills="$(cd "$skill_dir/.." && pwd -P)" || { err 'cannot resolve skills directory'; exit "$EX_SETUP"; }
 profile_file="$skill_dir/profiles/$profile/config.json"
 [ -f "$profile_file" ] || { err "unknown or incomplete profile: $profile"; exit "$EX_USAGE"; }
+
+command -v jq >/dev/null 2>&1 || { err 'jq is required'; exit "$EX_SETUP"; }
+# OpenCode silently swaps a subagent or unknown name for its default agent.
+[ "$(jq -r --arg agent "$agent" '.agent[$agent].mode // empty' "$profile_file")" = primary ] \
+  || { err "agent is not a primary agent of profile $profile: $agent"; exit "$EX_USAGE"; }
 
 command -v bwrap >/dev/null 2>&1 || { err 'bubblewrap is required'; exit "$EX_SETUP"; }
 # --disable-userns arrived in bubblewrap 0.8; older hosts still get --unshare-user.
@@ -78,21 +89,36 @@ gh_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}"
   || { err "no gh authentication in $gh_config; run gh auth login first"; exit "$EX_SETUP"; }
 
 config_json="$(< "$profile_file")" || { err 'cannot read profile config'; exit "$EX_SETUP"; }
-state_root="$(mktemp -d "${TMPDIR:-/tmp}/opencode-profile.XXXXXXXX")" \
+run_dir="$(mktemp -d "${TMPDIR:-/tmp}/opencode-profile.XXXXXXXX")" \
   || { err 'cannot create disposable OpenCode state'; exit "$EX_SETUP"; }
-chmod 700 "$state_root" || { rm -rf "$state_root"; exit "$EX_SETUP"; }
-mkdir -p "$state_root"/{home,config/gh,data/opencode,cache/opencode,xdg-state,tmp} \
-  || { rm -rf "$state_root"; exit "$EX_SETUP"; }
-touch "$state_root/data/opencode/auth.json" || { rm -rf "$state_root"; exit "$EX_SETUP"; }
+child=""
+cleanup() {
+  [ -z "$child" ] || kill "$child" 2>/dev/null
+  rm -rf "$run_dir"
+}
+trap 'cleanup; exit 129' HUP
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+setup_fail() { cleanup; exit "$EX_SETUP"; }
+
+chmod 700 "$run_dir" || setup_fail
+state_root="$run_dir/state"
+events="$run_dir/events"
+mkdir -p "$state_root"/{home,config/gh,config/opencode,data/opencode,cache/opencode,xdg-state,tmp} \
+  || setup_fail
+touch "$state_root/data/opencode/auth.json" || setup_fail
+# OpenCode npm-installs its plugin package into any writable config directory on
+# every start; a read-only one (with the .gitignore it would write) skips that.
+touch "$state_root/config/opencode/.gitignore" || setup_fail
 # Seed the models.dev catalog from the host cache when present: a fresh sandbox
 # otherwise fetches it at startup, and a failed fetch under concurrency makes
-# every model "not found".
+# every model "not found". Copy it, keeping its age, so a stale catalog still
+# refreshes into disposable state.
 models_cache="${XDG_CACHE_HOME:-$HOME/.cache}/opencode/models.json"
-models_args=()
 if [ -f "$models_cache" ]; then
-  touch "$state_root/cache/opencode/models.json" || { rm -rf "$state_root"; exit "$EX_SETUP"; }
-  models_args=(--ro-bind "$models_cache" /state/cache/opencode/models.json)
+  cp -p "$models_cache" "$state_root/cache/opencode/models.json" || setup_fail
 fi
+mkfifo "$events" || setup_fail
 
 bwrap \
   --die-with-parent --new-session \
@@ -114,7 +140,7 @@ bwrap \
   --bind "$state_root" /state \
   --ro-bind "$auth_json" /state/data/opencode/auth.json \
   --ro-bind "$gh_config" /state/config/gh \
-  "${models_args[@]}" \
+  --ro-bind "$state_root/config/opencode" /state/config/opencode \
   --chdir /workspace \
   --setenv PATH /opt:/usr/bin:/bin \
   --setenv HOME /state/home \
@@ -130,11 +156,32 @@ bwrap \
   --setenv OPENCODE_DISABLE_EXTERNAL_SKILLS 1 \
   --setenv OPENCODE_PURE 1 \
   --setenv OPENCODE_CONFIG_CONTENT "$config_json" \
-  /opt/opencode run --pure --format json --agent "$agent" --model "$model" "${variant_args[@]}" -- "$prompt"
-child_exit=$?
+  /opt/opencode run --pure --format json --agent "$agent" --model "$model" "${variant_args[@]}" -- "$prompt" \
+  > "$events" &
+child=$!
 
-if ! rm -rf "$state_root"; then
-  err "failed to remove disposable state $state_root"
+line=""
+read_status=0
+while :; do
+  IFS= read -r -t "$idle_timeout" line || { read_status=$?; break; }
+  printf '%s\n' "$line"
+done < "$events"
+[ -z "$line" ] || printf '%s' "$line"
+
+if [ "$read_status" -gt 128 ]; then
+  kill "$child" 2>/dev/null
+  wait "$child"
+  err "no OpenCode event for ${idle_timeout}s; stopped the run. Log tail:"
+  tail -n 20 "$state_root/data/opencode/log/opencode.log" >&2 2>/dev/null
+  child_exit="$EX_STALL"
+else
+  wait "$child"
+  child_exit=$?
+fi
+child=""
+
+if ! rm -rf "$run_dir"; then
+  err "failed to remove disposable state $run_dir"
   [ "$child_exit" -ne 0 ] || exit "$EX_CLEANUP"
 fi
 exit "$child_exit"

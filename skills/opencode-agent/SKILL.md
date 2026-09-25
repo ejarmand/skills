@@ -50,7 +50,13 @@ For running limited opencode sessions based on particular profiles use
 
 Add `--variant high` before `--` when the review calls for high effort. The
 runner passes the optional variant to OpenCode, which reports an error if the
-selected model does not support it.
+selected model does not support it. `--agent` picks another primary agent from
+the profile; the runner refuses subagents, which OpenCode would otherwise
+silently swap for its default agent.
+
+The runner stops a run that emits no event for 600 seconds, prints the tail of
+OpenCode's log, and exits 75; OpenCode can otherwise hang with no output. Pass
+`--idle-timeout SECONDS` to change the limit. Treat exit 75 as a failed run.
 
 ### available profiles
 

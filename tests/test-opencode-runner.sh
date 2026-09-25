@@ -35,6 +35,8 @@ if [ "${1:-}" = --help ]; then
   exit 0
 fi
 printf '%s\n' "$@" > "$BWRAP_ARGS"
+[ -z "${FAKE_BWRAP_EVENT:-}" ] || printf '%s\n' "$FAKE_BWRAP_EVENT"
+[ -z "${FAKE_BWRAP_STALL:-}" ] || exec sleep 30
 exit "${FAKE_BWRAP_EXIT:-0}"
 FAKE
 
@@ -87,6 +89,9 @@ grep -Fxq -- "$FAKE_DATA/opencode/auth.json" "$TMP/bwrap.args" \
 grep -Fxq -- "$FAKE_HOME/.config/gh" "$TMP/bwrap.args" \
   && grep -Fxq -- "/state/config/gh" "$TMP/bwrap.args" \
   && pass "runner mounts stored gh authentication" || fail "gh authentication mount missing"
+awk 'previous ~ /opencode-profile\..*\/state\/config\/opencode$/ && $0 == "/state/config/opencode" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
+  && pass "OpenCode config directory is read-only, so no per-run plugin install" \
+  || fail "OpenCode config directory is writable"
 
 state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
 [ -n "$state_root" ] || fail "writable state bind missing"
@@ -97,9 +102,9 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 rm -f "$TMP/bwrap.args"
 rc=0
 run_runner --workspace "$WS" --profile github-pr-reviewer \
-  --model openrouter/example-model --variant high --agent spec -- "review issue 18" || rc=$?
+  --model openrouter/example-model --variant high --agent reviewer -- "review issue 18" || rc=$?
 [ "$rc" -eq 0 ] || fail "variant dispatch exited $rc (want 0)"
-awk 'previous == "--agent" && $0 == "spec" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
+awk 'previous == "--agent" && $0 == "reviewer" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
   && pass "runner forwards the selected agent alongside the variant" || fail "selected agent missing"
 awk 'previous == "--variant" && $0 == "high" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
   && pass "runner forwards the requested model variant" || fail "model variant missing"
@@ -112,6 +117,55 @@ run_runner --workspace "$WS" --profile github-pr-reviewer \
   --model openrouter/example-model --variant "" -- "task" >/dev/null 2>&1 || rc=$?
 [ "$rc" -eq 2 ] && [ ! -f "$TMP/bwrap.args" ] \
   && pass "empty explicit variant is refused before launch" || fail "empty variant refusal: rc=$rc"
+
+# OpenCode would silently replace a subagent with its default agent.
+for bad_agent in spec build; do
+  rm -f "$TMP/bwrap.args"
+  rc=0
+  run_runner --workspace "$WS" --profile github-pr-reviewer \
+    --model openrouter/example-model --agent "$bad_agent" -- "task" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] && [ ! -f "$TMP/bwrap.args" ] \
+    && pass "non-primary agent $bad_agent is refused before launch" || fail "agent $bad_agent refusal: rc=$rc"
+done
+
+rm -f "$TMP/bwrap.args"
+rc=0
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model --idle-timeout 0 -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 2 ] && [ ! -f "$TMP/bwrap.args" ] \
+  && pass "zero idle timeout is refused before launch" || fail "idle timeout refusal: rc=$rc"
+
+# OpenCode events reach stdout unchanged.
+out="$(FAKE_BWRAP_EVENT='{"type":"step_start"}' run_runner --workspace "$WS" \
+  --profile github-pr-reviewer --model openrouter/example-model -- "task")"
+[ "$out" = '{"type":"step_start"}' ] && pass "runner relays OpenCode events" || fail "events not relayed: $out"
+
+# A silent run is stopped at the idle timeout rather than hanging.
+rm -f "$TMP/bwrap.args"
+rc=0
+started=$SECONDS
+FAKE_BWRAP_STALL=1 run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model --idle-timeout 1 -- "task" >/dev/null 2>&1 || rc=$?
+state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
+[ "$rc" -eq 75 ] && [ $((SECONDS - started)) -lt 10 ] \
+  && pass "stalled run exits 75 at the idle timeout" || fail "stalled run: rc=$rc after $((SECONDS - started))s"
+[ -n "$state_root" ] && [ ! -e "$state_root" ] \
+  && pass "stalled run state is removed" || fail "stalled run left state: $state_root"
+
+# A caller's timeout still cleans up the disposable state.
+rm -f "$TMP/bwrap.args"
+env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
+  HOME="$FAKE_HOME" XDG_DATA_HOME="$FAKE_DATA" BWRAP_ARGS="$TMP/bwrap.args" FAKE_BWRAP_STALL=1 \
+  "$RUNNER" --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "task" >/dev/null 2>&1 &
+runner_pid=$!
+for _ in $(seq 50); do [ -f "$TMP/bwrap.args" ] && break; sleep 0.1; done
+kill -TERM "$runner_pid"
+rc=0
+wait "$runner_pid" || rc=$?
+state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
+[ "$rc" -eq 143 ] && [ -n "$state_root" ] && [ ! -e "$state_root" ] \
+  && pass "terminated run removes its state" || fail "terminated run: rc=$rc state=$state_root"
 
 # The profile carries one reviewer identity across the complete hierarchy.
 [ "$(jq -r '.agent | keys | sort | join(",")' "$PROFILE")" = "reviewer,spec,standards" ] \
