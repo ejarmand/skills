@@ -14,7 +14,7 @@ A **flow** is a path through the skills. Most paths run along one **main flow**,
 
 The route most work travels. You have an idea and want it built.
 
-1. **`/grill-with-docs`** — sharpen the idea by interview. Start here when you **have a codebase**: it's stateful, retaining what it learns in `CONTEXT.md` and ADRs. (No codebase? Run `/grilling` directly — the same interview without the paper trail.)
+1. **`/grill`** — sharpen the idea by interview, one round of questions at a time, until you and the agent share one understanding. If you can't yet say what the goal is, run **`/same-page`** first. It agrees on the goal, its reason, and its scope, and keeps a scratch file so the thread doesn't get lost.
 2. **Branch — can you settle every question in conversation?** If a question needs a runnable answer (state, business logic, a UI you have to see), detour through a prototype, bridged by **`/handoff`** in both directions (see Crossing sessions):
    - **`/handoff`** out, then open a fresh session against that file,
    - **`/prototype`** to answer the question with throwaway code,
@@ -37,7 +37,7 @@ A starting situation that generates work, then merges onto the main flow.
 
 - **Something's broken** → **`/diagnosing-bugs`**. For the hard ones: the bug that resists a first glance, the intermittent flake, the regression that crept in between two known-good states. It refuses to theorise until it has a **tight feedback loop** — one command that already goes red on *this* bug — then fixes with a regression test. Its post-mortem hands off to **`/improve-codebase-architecture`** when the real finding is that there's no good seam to lock the bug down.
 
-- **A huge, loose effort — a greenfield project or a huge feature build, too big for one session** → **`/wayfinder`**, the most cognitively demanding flow here. When the way from here to the destination isn't visible yet, it charts a **shared map** of **decision tickets** on GitHub and resolves them one at a time — producing **decisions, not deliverables** — until the way is clear. Where **`/grill-with-docs`** sharpens an idea you can hold in one session, wayfinder is for the idea you can't — and it's slower and denser, so save it for exactly that, never a well-scoped feature.
+- **A huge, loose effort — a greenfield project or a huge feature build, too big for one session** → **`/wayfinder`**, the most cognitively demanding flow here. When the way from here to the destination isn't visible yet, it charts a **shared map** of **decision tickets** on GitHub and resolves them one at a time — producing **decisions, not deliverables** — until the way is clear. Where **`/grill`** sharpens an idea you can hold in one session, wayfinder is for the idea you can't — and it's slower and denser, so save it for exactly that, never a well-scoped feature.
 
   When the map clears, **it hands off, it doesn't build**: merge onto the main flow at **`/to-spec`**, which collapses the map's linked decisions into a buildable plan, then `/to-tickets` and `/pr-ping-pong` as usual. Skipping the collapse throws the linked detail away — do that only when the effort turned out genuinely small.
 
@@ -45,7 +45,7 @@ A starting situation that generates work, then merges onto the main flow.
 
 Not feature work — upkeep.
 
-- **`/improve-codebase-architecture`** — run whenever you have a spare moment to keep the codebase good for agents to operate in. It surfaces **deepening opportunities**; picking one _generates an idea_ you can take into the main flow at `/grill-with-docs`. It's the survey that finds the candidates; **`/codebase-design`** (below) is the bench you design the chosen one on.
+- **`/improve-codebase-architecture`** — run whenever you have a spare moment to keep the codebase good for agents to operate in. It surfaces **deepening opportunities**; picking one _generates an idea_ you can take into the main flow at `/grill`. It's the survey that finds the candidates; **`/codebase-design`** (below) is the bench you design the chosen one on.
 
 ## HTML rendering
 
@@ -58,7 +58,7 @@ Not feature work — upkeep.
 
 Two model-invoked references that run *beneath* the other skills — each the single source of truth for its vocabulary. Reach for them directly when the **words**, not the process, are the problem; or let the skills above pull them in.
 
-- **`/domain-modeling`** — sharpen the project's *domain* language: challenge a fuzzy term, resolve an overloaded word ("account" doing three jobs), record a hard-to-reverse decision as an ADR. It's the active discipline `/grill-with-docs` drives to keep `CONTEXT.md` a clean glossary.
+- **`/domain-modeling`** — sharpen the project's *domain* language: challenge a fuzzy term, resolve an overloaded word ("account" doing three jobs), record a hard-to-reverse decision as an ADR. It keeps `CONTEXT.md` a clean glossary.
 - **`/codebase-design`** — the deep-module vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing a module's *shape*: a lot of behaviour behind a small interface at a clean seam. `/tdd` and `/improve-codebase-architecture` both speak it.
 
 ## Crossing sessions
@@ -69,7 +69,7 @@ Two model-invoked references that run *beneath* the other skills — each the si
 
 ## Cross-provider delivery
 
-- **`/batch-subagents`** — fan out many independent Codex/Luna workers
+- **`/batch-subagents`** — fan out many independent CLI agent workers
   through one finite-concurrency shell invocation.
 - **`/pr-ping-pong`** — rally an issue or PR between one continuing
   implementer and independent cross-provider reviewers until it passes or the
@@ -86,10 +86,10 @@ Two model-invoked references that run *beneath* the other skills — each the si
 Off the main flow entirely.
 
 - **`/prototype`** — a small, throwaway program that answers one design question: does this state model feel right, or what should this UI look like. Throwaway from day one — keep the answer, delete the code. It's the detour in step 2 of the main flow, but reach for it any time a design question is hard to settle on paper.
-- **`/research`** — delegate reading legwork to a **background agent**: it investigates a question against **primary sources**, then leaves a cited Markdown file in the repo. Keep working while it reads. The file it produces is something to take *into* the main flow at `/grill-with-docs` — research feeds the thinking, it doesn't replace it.
 - **`/teach`** — learn a concept over multiple sessions, using the current directory as a stateful workspace.
 - **`/bro`** — restate the last response in plain, concise language. Invoke it explicitly when the answer is harder to read than it needs to be.
 - **`/unslop`** — edit prose to remove AI writing patterns, filler, and needless complexity while preserving its meaning and intended tone.
+- **`/laziness-protocol`** — prefer deletion and the smallest diff that solves the problem. Reach for it when refactoring, judging a diff's size, or tempted to add another layer or thread a new signal through one.
 - **`/writing-great-skills`** — reference for writing and editing skills well.
 - **`/fix-steering`** — audit Codex session history for repeated steering and
   turn the evidence into concrete skill, repository-guidance, or tooling
