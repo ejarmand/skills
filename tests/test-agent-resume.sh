@@ -522,6 +522,80 @@ check "a live pid with no listening inbox falls back to --bg resume" \
   called claude "--resume $SID --bg --dangerously-skip-permissions -- nobody listening"
 check "the missing inbox is logged" grep -Fq "no inbox is listening" "$STATE/$unit.log"
 
+# --- watching a process by PID -----------------------------------------------
+# The watched processes are this shell's children, never agent-resume's.
+job_log="$TMP/job.log"
+! ar "$CLI" codex "$SID" --pid "$$" --message m --dry-run >/dev/null 2>&1 \
+  && pass "--pid without --log is refused" || fail "--pid without --log accepted"
+! ar "$CLI" codex "$SID" --log "$job_log" --time 1h --message m --dry-run >/dev/null 2>&1 \
+  && pass "--log without --pid is refused" || fail "--log without --pid accepted"
+! ar "$CLI" codex "$SID" --pid "$$" --log "$job_log" --time 1h --message m --dry-run >/dev/null 2>&1 \
+  && pass "--pid plus --time is refused" || fail "--pid plus --time accepted"
+reset_calls
+out="$(ar "$CLI" codex "$SID" --pid 999999999 --log "$job_log" --message m 2>&1)"
+check "a PID with no process is refused at scheduling" grep -Fqx 'agent-resume: no process 999999999' <<< "$out"
+check "a PID with no process schedules nothing" not_called systemd-run
+out="$(ar "$CLI" codex "$SID" --pid "$$" --log job.log --message m --dry-run 2>&1)"
+check "pid dry-run shows the completion message shape" \
+  grep -Fq "agent-resume: process $$ <ended | exited with status N>." <<< "$out"
+check "a relative --log is resolved against the caller's cwd" grep -Fq "Log: $WS/job.log" <<< "$out"
+
+# The exit line is written only after the sleep, so reporting it shows the
+# trigger waited for the process to end.
+bash -c 'sleep 1; seq 1 50; echo exit=3' > "$job_log" &
+job=$!
+reset_calls
+unit="$(ar "$CLI" codex "$SID" --pid "$job" --log "$job_log" --message 'job finished' 2>&1)"
+expected="job finished
+
+agent-resume: process $job exited with status 3 (from its log's last line).
+Log: $job_log
+Last 40 log lines:
+$(seq 12 50)
+exit=3"
+check "a non-child's exit delivers its exit=N status and log tail" \
+  test "$(cat "$CALLS/codex.last")" = "$expected"
+check "a pid trigger fires cleanly" test "$(cat "$CALLS/fire.status")" -eq 0
+check "a pid trigger removes its state file" test ! -e "$STATE/$unit.json"
+wait "$job"
+
+bash -c 'sleep 0.5; echo last words' > "$job_log" &
+job=$!
+reset_calls
+ar "$CLI" codex "$SID" --pid "$job" --log "$job_log" --message 'job finished' >/dev/null 2>&1
+check "a log without an exit line reports only that the process ended" \
+  grep -Fqx "agent-resume: process $job ended." "$CALLS/codex.last"
+check "a log without an exit line still carries its tail" grep -Fqx 'last words' "$CALLS/codex.last"
+wait "$job"
+
+sleep 0.5 &
+job=$!
+reset_calls
+ar "$CLI" codex "$SID" --pid "$job" --log "$TMP/no-such.log" --message 'job finished' >/dev/null 2>&1
+check "a missing log still delivers, saying it is unreadable" \
+  grep -Fq '(log unreadable: [Errno 2] No such file or directory' "$CALLS/codex.last"
+wait "$job"
+
+# A recorded start time that no longer matches means the PID was recycled: the
+# watched process is gone, so the trigger must not wait on the new holder.
+sleep 30 &
+job=$!
+reset_calls
+unit="$(ar env FAKE_SYSTEMD_EXEC=0 "$CLI" codex "$SID" --pid "$job" --log "$job_log" --message 'recycled' 2>&1)"
+check "a pid trigger records the process start time" \
+  test "$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["start"])' "$STATE/$unit.json")" \
+    = "$(cut -d' ' -f22 "/proc/$job/stat")"
+python3 -c 'import json, sys; s = json.load(open(sys.argv[1])); s["start"] = "1"; json.dump(s, open(sys.argv[1], "w"))' \
+  "$STATE/$unit.json" || exit 1
+AR_CWD="$FAKE_HOME" ar timeout 10 "$CLI" _fire "$unit" >> "$STATE/$unit.log" 2>&1
+status=$?
+kill "$job"; wait "$job" 2>/dev/null
+check "a recycled PID does not wait on the new process" test "$status" -eq 0
+check "a recycled PID is logged" \
+  grep -Fq "agent-resume: PID $job now belongs to another process (start time" "$STATE/$unit.log"
+check "a recycled PID delivers that the watched process ended" \
+  grep -Fqx "agent-resume: process $job ended." "$CALLS/codex.last"
+
 # --- list and cancel ---------------------------------------------------------
 reset_calls
 unit="$(ar env FAKE_SYSTEMD_EXEC=0 "$CLI" codex "$SID" --time 3h --message 'later' 2>&1)"
@@ -533,6 +607,11 @@ check "list shows the waiting trigger" \
 ar "$CLI" cancel "$unit" >/dev/null 2>&1
 check "cancel stops the trigger's units" called systemctl "--user stop $unit.*"
 check "cancel removes the state file" test ! -e "$STATE/$unit.json"
+unit="$(ar env FAKE_SYSTEMD_EXEC=0 "$CLI" codex "$SID" --pid "$$" --log "$job_log" --message 'watching' 2>&1)"
+out="$(ar env FAKE_UNITS="$unit.service loaded active running agent-resume codex $SID" "$CLI" list 2>&1)"
+check "list shows a running pid trigger" \
+  grep -Eq "^$unit	running	codex $SID	on exit of process $$ .*	watching$" <<< "$out"
+ar "$CLI" cancel "$unit" >/dev/null 2>&1
 ! ar "$CLI" cancel 'agent-resume-*' >/dev/null 2>&1 \
   && pass "cancel refuses a non-trigger ID" || fail "cancel accepted a glob"
 

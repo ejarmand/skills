@@ -15,6 +15,10 @@ PATH; it also lives at `bin/agent-resume` in this skill.
 # Status update when a job finishes: the command runs inside the unit.
 agent-resume codex --message "address any errors" -- make test
 
+# Status update when a process you already started exits, e.g. a background
+# Bash job that returned a PID and an output file.
+agent-resume claude --pid 4242 --log /tmp/job.log --message "job finished, check the log"
+
 # Timed resume; the session may be closed by then.
 agent-resume claude --time 3h --message "resume and look at new PRs on the repo"
 
@@ -22,11 +26,18 @@ agent-resume list
 agent-resume cancel <trigger-id>
 ```
 
-The completion message is your `--message` plus the exit status, the last 40
-log lines, and the log path under `~/.local/state/agent-resume/`. The command
-gets your environment and working directory. `--time` takes a systemd time
-span (`90min`, `3h`, `2d`). `--dry-run` prints the systemd and delivery
-commands without running anything.
+For a command trigger (a command after `--`), the completion message is your
+`--message` plus the exit status, the last 40 log lines, and the log path
+under `~/.local/state/agent-resume/`. The command gets your environment and
+working directory. `--time` takes a systemd time span (`90min`, `3h`, `2d`).
+`--dry-run` prints the systemd and delivery commands without running
+anything.
+
+A `--pid` process is not the trigger's child, so its exit status cannot be
+read: the message says only that it ended, plus the last 40 lines of `--log`.
+If the log's last line is `exit=N`, the message reports status N, so launch
+jobs you may watch this way as `cmd; echo exit=$? >> log` and pass the PID of
+the shell that runs the `echo`.
 
 ## Session IDs
 
