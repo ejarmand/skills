@@ -20,7 +20,7 @@ Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so th
 
 Before going further, confirm the fixed point resolves and the diff is non-empty. If the caller supplied pinned OIDs, use them as the fixed point and `HEAD`. Otherwise `git show --no-patch --format=fuller <fixed-point>` confirms the ref. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
 
-Issue each shell command on its own, not chained with `&&`, `;`, or `|`. Restricted review profiles allow only single read-only git commands (`diff`, `log`, `show`, `status`) and deny the rest.
+Issue each shell command on its own, not chained with `&&`, `;`, or `|`. Restricted review profiles allow single read-only git commands (`diff`, `log`, `show`, `status`) but deny other git subcommands and chained commands.
 
 ### 2. Identify the spec source
 

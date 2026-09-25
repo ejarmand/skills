@@ -118,12 +118,15 @@ Dispatch duplicate model entries sequentially so each has its own before and
 after snapshot. Do not count a failed review toward Pass.
 
 
-Run the reviewers other than Cursor in parallel. The Cursor runner stages
-`.cursor/` files and a lock directory in its workspace until it exits, so
-another reviewer's clean-tree check in that workspace would fail. With one
-shared `checkout`, give Cursor its own phase: start the other reviewers
-together and wait for all of them, then run Cursor, or run Cursor first and
-wait for its runner to exit. To run every reviewer at once, point Cursor at its
+Run distinct models other than Cursor in parallel; duplicate entries of one
+model stay sequential, as above. The Cursor runner stages `.cursor/` files and
+a lock directory in its workspace until it exits, so another reviewer's
+clean-tree check in that workspace would fail. With one shared `checkout`,
+give Cursor its own phase: start the other reviewers together and wait for all
+of them, then run Cursor, or run Cursor first and start the others only after
+its runner exits 0 and `git status --porcelain` in the checkout is empty. Exit
+70 means a rollback failed and left `.cursor-profile-txn/` behind; don't start
+other reviewers in that checkout. To run every reviewer at once, point Cursor at its
 own detached worktree at the pinned head and remove it after the review. Two
 Cursor reviewers never share a workspace; the runner's lock rejects the second.
 

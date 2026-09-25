@@ -82,7 +82,7 @@ Use `stream-json` for unattended runs. A long review with plain `json` prints no
 While the child runs, the workspace holds the staged `.cursor/` files and the runner's `.cursor-profile-txn/` lock and journal. That has two separate effects:
 
 - A second Cursor runner on the same workspace hits the lock and exits 75. Give each Cursor dispatch its own workspace.
-- Other providers are not locked out, but their clean-tree or diff checks in that workspace see the staged files, which show as edits when the repo tracks `.cursor/cli.json`. Run them in a separate checkout, or before or after the Cursor run.
+- Other providers are not locked out, but their clean-tree or diff checks in that workspace see the staged state: `git status --porcelain` lists `.cursor-profile-txn/` and any staged `.cursor/` file the repo doesn't track, such as `.cursor/sandbox.json`, and shows a tracked `.cursor/cli.json` as an edit. Run them in a separate checkout, or before or after the Cursor run.
 
 The staging has to stay in the workspace. Cursor reads the user `sandbox.json` from `~/.cursor/` regardless of `CURSOR_CONFIG_DIR`, and the workspace's own `.cursor/sandbox.json` takes priority over it, so overwriting the workspace copy is the only per-run way to stop a reviewed branch's Cursor config from widening the profile.
 
