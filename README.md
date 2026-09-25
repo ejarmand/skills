@@ -39,8 +39,9 @@ maps the complete collection.
 - `bro` — restate the last response in plain, concise language
 - `unslop` — remove AI writing patterns and improve legibility
 - `writing-great-skills` — reference for authoring and editing skills
-- `html-visualization` — build HTML diagrams, process maps, timelines, and
-  interactive explainers, checking each render with screenshots
+- `html-visualization` — build HTML diagrams, process maps, timelines,
+  comparisons, and interactive explainers, checking each render with
+  screenshots
 
 ### Agent and review orchestration
 
@@ -78,8 +79,8 @@ BIN_DIR=/path/to/bin \
 If a link name is already taken by a real file or directory, such as a copy
 from an older install, the installer lists every such path and asks once before
 deleting them all and linking in their place. Pass `--yes` to delete without
-asking. Without a terminal and without `--yes`, it exits before linking or
-deleting anything.
+asking. If such a collision exists and there is no terminal and no `--yes`,
+it exits before linking or deleting anything.
 
 On a terminal, and without `--yes`, the installer then offers to set
 `crossSessionInbound` to `"accept"` in `~/.claude/settings.json`
