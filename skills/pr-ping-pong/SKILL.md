@@ -118,9 +118,14 @@ Dispatch duplicate model entries sequentially so each has its own before and
 after snapshot. Do not count a failed review toward Pass.
 
 
-* note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
-clean-tree verification. When using it run reviewers sequentially, or pin one checkout per
-reviewer.
+Run the reviewers other than Cursor in parallel. The Cursor runner stages
+`.cursor/` files and a lock directory in its workspace until it exits, so
+another reviewer's clean-tree check in that workspace would fail. With one
+shared `checkout`, give Cursor its own phase: start the other reviewers
+together and wait for all of them, then run Cursor, or run Cursor first and
+wait for its runner to exit. To run every reviewer at once, point Cursor at its
+own detached worktree at the pinned head and remove it after the review. Two
+Cursor reviewers never share a workspace; the runner's lock rejects the second.
 
 #### review agent defaults
 

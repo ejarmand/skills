@@ -376,6 +376,53 @@ FAKE_CP_FAIL=1 FAKE_TOUCH="$ws/launched" "$RUNNER" --workspace "$ws" --profile g
 grep -q "rollback also failed" "$TMP/$t.err" || fail "$t: rollback failure not reported"
 pass "$t failed rollback reported, journal and backup retained"
 
+# --- test 14: mixed-provider concurrency (issue #45) -----------------------
+# Another reviewer's clean-tree check is `git status --porcelain`. Shared
+# checkout while Cursor runs: unsupported, the staged state reads as edits.
+# Shared checkout after the runner exits: supported, the tree is clean again.
+# Separate pinned checkouts: supported, including a second Cursor runner.
+# Same-workspace Cursor-to-Cursor contention is t7.
+t=t14
+repo="$TMP/$t-repo"; wt="$TMP/$t-cursor-wt"
+dirty_paths() { git -C "$1" status --porcelain --untracked-files=all | cut -c4-; }
+{
+  git init -q "$repo" && mkdir "$repo/.cursor" &&
+  printf 'src\n' > "$repo/src.txt" && printf '{"permissions":{"allow":[]}}\n' > "$repo/.cursor/cli.json" &&
+  git -C "$repo" add -A &&
+  git -C "$repo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m init &&
+  git -C "$repo" worktree add -q --detach "$wt" HEAD
+} || exit 1
+head_oid="$(git -C "$repo" rev-parse HEAD)" || exit 1
+
+out="$TMP/$t-shared.obs"
+FAKE_OUT="$out" FAKE_SLEEP=30 "$RUNNER" --workspace "$repo" --profile github-pr-reviewer -- -p "x" \
+  > /dev/null 2>&1 &
+runner_pid=$!
+wait_for_file "$out" || fail "$t: shared-checkout child never launched"
+during="$(dirty_paths "$repo")"
+printf '%s\n' "$during" | grep -qx '.cursor/cli.json' || fail "$t: staged tracked cli.json should read as an edit during the run"
+[ -z "$(printf '%s\n' "$during" | grep -v -e '^\.cursor/' -e '^\.cursor-profile-txn/')" ] \
+  || fail "$t: runner touched paths outside its staging: $during"
+kill -TERM "$runner_pid"
+wait "$runner_pid" 2>/dev/null
+[ -z "$(dirty_paths "$repo")" ] || fail "$t: shared checkout not clean after the Cursor phase"
+[ "$(git -C "$repo" rev-parse HEAD)" = "$head_oid" ] || fail "$t: shared checkout HEAD moved"
+
+out="$TMP/$t-wt.obs"
+FAKE_OUT="$out" FAKE_SLEEP=30 "$RUNNER" --workspace "$wt" --profile github-pr-reviewer -- -p "x" \
+  > /dev/null 2>&1 &
+runner_pid=$!
+wait_for_file "$out" || fail "$t: separate-checkout child never launched"
+[ -n "$(dirty_paths "$wt")" ] || fail "$t: Cursor worktree shows no staging during the run"
+[ -z "$(dirty_paths "$repo")" ] || fail "$t: Cursor state leaked into the other reviewers' checkout"
+rc=0
+"$RUNNER" --workspace "$repo" --profile github-pr-reviewer -- -p "x" > /dev/null 2>&1 || rc=$?
+[ "$rc" -eq 0 ] || fail "$t: second Cursor runner in a separate checkout exit $rc (want 0)"
+kill -TERM "$runner_pid"
+wait "$runner_pid" 2>/dev/null
+[ -z "$(dirty_paths "$wt")" ] && [ -z "$(dirty_paths "$repo")" ] || fail "$t: checkouts not clean after both runs"
+pass "$t shared checkout needs a Cursor phase; separate checkouts run concurrently"
+
 # ---------------------------------------------------------------------------
 if [ "$failures" -gt 0 ]; then
   echo "$failures test failure(s)" >&2

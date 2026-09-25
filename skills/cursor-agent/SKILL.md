@@ -77,7 +77,12 @@ The runner stages the profile for exactly one invocation, supervises the child, 
   -- -p --output-format json --trust "REVIEW_TASK"
 ```
 
-A workspace lock rejects concurrent runners, so parallel dispatches need separate workspaces.
+While the child runs, the workspace holds the staged `.cursor/` files and the runner's `.cursor-profile-txn/` lock and journal. That has two separate effects:
+
+- A second Cursor runner on the same workspace hits the lock and exits 75. Give each Cursor dispatch its own workspace.
+- Other providers are not locked out, but their clean-tree or diff checks in that workspace see the staged files, which show as edits when the repo tracks `.cursor/cli.json`. Run them in a separate checkout, or before or after the Cursor run.
+
+The staging has to stay in the workspace. Cursor reads the user `sandbox.json` from `~/.cursor/` regardless of `CURSOR_CONFIG_DIR`, and the workspace's own `.cursor/sandbox.json` takes priority over it, so overwriting the workspace copy is the only per-run way to stop a reviewed branch's Cursor config from widening the profile.
 
 Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the profile's allowlist is the whole command surface; the runner allowlists child arguments and rejects everything else.
 
