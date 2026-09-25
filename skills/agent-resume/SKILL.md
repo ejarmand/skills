@@ -26,11 +26,12 @@ agent-resume list
 agent-resume cancel <trigger-id>
 ```
 
-The completion message is your `--message` plus the exit status, the last 40
-log lines, and the log path under `~/.local/state/agent-resume/`. The command
-gets your environment and working directory. `--time` takes a systemd time
-span (`90min`, `3h`, `2d`). `--dry-run` prints the systemd and delivery
-commands without running anything.
+For a command trigger (a command after `--`), the completion message is your
+`--message` plus the exit status, the last 40 log lines, and the log path
+under `~/.local/state/agent-resume/`. The command gets your environment and
+working directory. `--time` takes a systemd time span (`90min`, `3h`, `2d`).
+`--dry-run` prints the systemd and delivery commands without running
+anything.
 
 A `--pid` process is not the trigger's child, so its exit status cannot be
 read: the message says only that it ended, plus the last 40 lines of `--log`.
