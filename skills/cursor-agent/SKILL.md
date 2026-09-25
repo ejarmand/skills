@@ -74,8 +74,10 @@ The runner stages the profile for exactly one invocation, supervises the child, 
 /absolute/path/to/cursor-agent/scripts/run-profiled.sh \
   --workspace /absolute/path/to/workspace \
   --profile github-pr-reviewer \
-  -- -p --output-format json --trust "REVIEW_TASK"
+  -- -p --output-format stream-json --trust "REVIEW_TASK"
 ```
+
+Use `stream-json` for unattended runs. A long review with plain `json` prints nothing until the terminal result, so the caller can't tell progress, a tool denial, or a stall apart.
 
 While the child runs, the workspace holds the staged `.cursor/` files and the runner's `.cursor-profile-txn/` lock and journal. That has two separate effects:
 
@@ -92,3 +94,4 @@ Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the pr
 multi-word `Shell(...)` allows — live-verified but undocumented — for exactly
 the profile's `gh` surface, paired with a `sandbox.json` GitHub-only network
 allowlist as defense in depth.
+The allowlist covers git only as `git diff`, `git log`, `git show`, and `git status`. `git rev-parse` has no allow entry, so the profile denies it.

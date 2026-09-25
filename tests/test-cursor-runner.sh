@@ -327,10 +327,11 @@ done
 [ ! -e "$ws/launched" ] && [ ! -e "$ws/launched-sep" ] || fail "$t: launched despite disallowed flag"
 [ ! -e "$ws/.cursor-profile-txn" ] || fail "$t: rejection should precede locking"
 rc=0
-FAKE_TOUCH="$ws/launched-ok" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
-  -- -p --output-format json --model default-model --trust "task" > /dev/null 2>&1 || rc=$?
+FAKE_TOUCH="$ws/launched-ok" FAKE_OUT="$ws/ok.obs" "$RUNNER" --workspace "$ws" --profile github-pr-reviewer \
+  -- -p --output-format stream-json --model default-model --trust "task" > /dev/null 2>&1 || rc=$?
 [ "$rc" -eq 0 ] || fail "$t: allowlisted argument set exit $rc (want 0)"
 [ -e "$ws/launched-ok" ] || fail "$t: allowlisted argument set did not launch"
+grep -q -- "--output-format stream-json" "$ws/ok.obs" || fail "$t: stream-json not passed to the child"
 pass "$t child arguments allowlisted (separated and = forms rejected)"
 
 # --- test 12: unauthenticated journal cannot direct removals ---------------
