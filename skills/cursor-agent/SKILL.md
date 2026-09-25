@@ -74,10 +74,17 @@ The runner stages the profile for exactly one invocation, supervises the child, 
 /absolute/path/to/cursor-agent/scripts/run-profiled.sh \
   --workspace /absolute/path/to/workspace \
   --profile github-pr-reviewer \
-  -- -p --output-format json --trust "REVIEW_TASK"
+  -- -p --output-format stream-json --trust "REVIEW_TASK"
 ```
 
-A workspace lock rejects concurrent runners, so parallel dispatches need separate workspaces.
+Use `stream-json` for unattended runs. A long review with plain `json` prints nothing until the terminal result, so the caller can't tell progress, a tool denial, or a stall apart.
+
+While the child runs, the workspace holds the staged `.cursor/` files and the runner's `.cursor-profile-txn/` lock and journal. That has two separate effects:
+
+- A second Cursor runner on the same workspace hits the lock and exits 75. Give each Cursor dispatch its own workspace.
+- Other providers are not locked out, but their clean-tree or diff checks in that workspace see the staged state: `git status --porcelain` lists `.cursor-profile-txn/` and any staged `.cursor/` file the repo doesn't track, such as `.cursor/sandbox.json`, and shows a tracked `.cursor/cli.json` as an edit. Run them in a separate checkout, or before or after the Cursor run.
+
+The staging has to stay in the workspace. Cursor reads the user `sandbox.json` from `~/.cursor/` regardless of `CURSOR_CONFIG_DIR`, and the workspace's own `.cursor/sandbox.json` takes priority over it, so overwriting the workspace copy is the only per-run way to stop a reviewed branch's Cursor config from widening the profile.
 
 Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the profile's allowlist is the whole command surface; the runner allowlists child arguments and rejects everything else.
 
@@ -87,3 +94,4 @@ Run profiled dispatches with plain `-p --trust` (deny-unless-allowed), so the pr
 multi-word `Shell(...)` allows — live-verified but undocumented — for exactly
 the profile's `gh` surface, paired with a `sandbox.json` GitHub-only network
 allowlist as defense in depth.
+The allowlist covers git only as `git diff`, `git log`, `git show`, and `git status`. `git rev-parse` has no allow entry, so the profile denies it.
