@@ -15,9 +15,9 @@
 # --provider-timeout bounds the wait for a provider's response headers and
 # between stream chunks (default 120; OpenCode's own default is 300 per
 # attempt, retried about nine times, with no output). Profile values win.
-# --rate-limit-grace stops a run once OpenCode logs a rate-limit error and then
-# emits no event for that long (default 60), and exits EX_RATE_LIMITED;
-# OpenCode otherwise waits out any retry-after silently.
+# --rate-limit-grace stops a run once OpenCode logs a rate-limit or overload
+# error and then emits no event for that long (default 60), and exits
+# EX_RATE_LIMITED; OpenCode otherwise retries silently, honoring retry-after.
 # --idle-timeout stops a run that emits no event for that long (default 1800),
 # reports what OpenCode was waiting on, and exits EX_STALL (#53).
 
@@ -190,39 +190,49 @@ report_stall() {
   err "OpenCode pid $pid stdin: $(readlink "/proc/$pid/fd/0")"
   err "OpenCode pid $pid wchan: $(cat "/proc/$pid/wchan")"
   err "OpenCode pid $pid established TCP connections:"
+  command -v ss >/dev/null 2>&1 || { err '  unavailable: ss is not installed'; return; }
   ss -tnpH state established | grep -F "pid=$pid," >&2 || err '  none'
 }
 
 # Relay events byte for byte, waking each second to check the log and the idle
 # clock. read -t keeps a partial line on timeout, so pieces collect in buf.
 log="$state_root/data/opencode/log/opencode.log"
-# A rate-limit stream error logged after the last event (past log_seen bytes).
-# Title generation (small=true) failing does not block the run.
-rate_limit_re='message="stream error".* small=false .*error\.error=.*(\b429\b|rate[ _-]?limit|too many requests)'
+# A stream error showing a rate limit or overload. Title generation
+# (small=true) failing does not block the run.
+limit_re='error\.error=.*(\b(429|503|529)\b|rate[ _-]?limit|too many requests|overloaded|service unavailable)'
 buf=""
 line=""
 stop=""
 last_event=$SECONDS
 log_seen=0
+scanned_at=-1
 limited=""
 limited_at=0
 while :; do
   read_status=0
   IFS= read -r -t 1 line || read_status=$?
   if [ "$read_status" -eq 0 ]; then
-    log_seen="$(stat -c %s "$log" 2>/dev/null)" || log_seen=0
     printf '%s\n' "$buf$line"
     buf="" line="" limited="" last_event=$SECONDS
-    continue
+  elif [ "$read_status" -gt 128 ]; then
+    [ -z "$line" ] || { buf+="$line"; line=""; last_event=$SECONDS; }
+  else
+    break
   fi
-  [ "$read_status" -gt 128 ] || break
-  [ -z "$line" ] || { buf+="$line"; line=""; last_event=$SECONDS; }
-  if [ -z "$limited" ]; then
-    limited="$(tail -c +"$((log_seen + 1))" "$log" 2>/dev/null | grep -m 1 -Ei -- "$rate_limit_re")"
-    limited_at=$SECONDS
-  elif [ $((SECONDS - limited_at)) -ge "$rate_limit_grace" ]; then
-    stop=rate-limited; break
+  # Scan the log bytes written since the last scan, at most once a second. An
+  # error counts from when it is scanned, so a later event still clears it.
+  if [ "$SECONDS" -ne "$scanned_at" ]; then
+    scanned_at=$SECONDS
+    log_size="$(stat -c %s "$log" 2>/dev/null)" || log_size=0
+    if [ "$log_size" -gt "$log_seen" ]; then
+      found="$(tail -c +"$((log_seen + 1))" "$log" | head -c "$((log_size - log_seen))" \
+        | grep -F -- 'message="stream error"' | grep -Ei -- "$limit_re" \
+        | grep -Ev -m 1 -- '(^|[[:space:]])small=true([[:space:]]|$)')"
+      log_seen=$log_size
+      [ -z "$found" ] || [ -n "$limited" ] || { limited="$found"; limited_at=$SECONDS; }
+    fi
   fi
+  [ -z "$limited" ] || [ $((SECONDS - limited_at)) -lt "$rate_limit_grace" ] || { stop=rate-limited; break; }
   [ $((SECONDS - last_event)) -lt "$idle_timeout" ] || { stop=idle; break; }
 done < "$events"
 [ -z "$buf$line" ] || printf '%s' "$buf$line"
@@ -239,7 +249,7 @@ case "$stop" in
   rate-limited)
     kill "$child" 2>/dev/null
     wait "$child"
-    err "provider rate limit and no OpenCode event for ${rate_limit_grace}s; stopped the run:"
+    err "provider rate limit or overload and no OpenCode event for ${rate_limit_grace}s; stopped the run:"
     printf '%s\n' "$limited" >&2
     child_exit="$EX_RATE_LIMITED" ;;
   *)

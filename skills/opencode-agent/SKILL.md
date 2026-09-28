@@ -61,9 +61,10 @@ those waits:
   headers and between stream chunks. OpenCode retries a timed-out request a
   few times, then emits an error event and exits nonzero. Timeouts the profile
   sets for that provider win.
-- When OpenCode logs a provider rate limit and then emits no event for
-  `--rate-limit-grace SECONDS` (default 60), the runner prints the logged
-  error and exits 76 instead of waiting out the provider's `retry-after`.
+- When OpenCode logs a provider rate limit or overload (429, 503, 529) and
+  then emits no event for `--rate-limit-grace SECONDS` (default 60), the
+  runner prints the logged error and exits 76 instead of waiting out
+  OpenCode's silent retries.
   Retry later or dispatch another provider.
 - A run with no event for `--idle-timeout SECONDS` (default 1800) is stopped
   with exit 75, after the runner prints what OpenCode was waiting on (its

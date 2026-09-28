@@ -49,7 +49,7 @@ if [ -n "${FAKE_BWRAP_SLOW_EVENT:-}" ]; then
 fi
 if [ -n "${FAKE_BWRAP_STALL:-}" ]; then
   # A sleep named opencode stands in for the sandboxed process.
-  "$FAKE_SANDBOXED" 30 <&0 &
+  "$FAKE_SANDBOXED" "${FAKE_BWRAP_STALL_SECONDS:-30}" <&0 &
   trap 'kill $!; exit 143' TERM
   wait
 fi
@@ -212,6 +212,39 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
   || fail "rate-limited run: rc=$rc after $((SECONDS - started))s: $err"
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "rate-limited run state is removed" || fail "rate-limited run left state: $state_root"
+
+# A rate-limit line without small=, and an overload, count the same way.
+expect_limited() {
+  rc=0
+  FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$2" run_runner --workspace "$WS" \
+    --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 1 --idle-timeout 6 \
+    -- "task" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 76 ] && pass "$1 exits 76" || fail "$1: rc=$rc"
+}
+expect_limited "rate limit without small=" "${rate_limit_log/ small=false/}"
+expect_limited "provider overload" "${rate_limit_log/Rate limit exceeded/Service Unavailable (503): overloaded}"
+
+# An event read before the runner scans the error does not hide it. The fake
+# writes the error, then the event, then goes silent, all within milliseconds
+# of opening the event pipe. The runner scans the log only after a read
+# returns, so it reads the event first and the error only on a later scan.
+rc=0
+FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$rate_limit_log" FAKE_BWRAP_EVENT='{"type":"step_start"}' \
+  run_runner --workspace "$WS" --profile github-pr-reviewer --model openrouter/example-model \
+  --rate-limit-grace 1 --idle-timeout 6 -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 76 ] && pass "an error logged just before an event is still scanned" \
+  || fail "error before event: rc=$rc"
+
+# An event that completes after the error was scanned is progress: the run
+# goes on to exit on its own. The event starts at once (so the error is scanned
+# on the first one-second wake) and completes 2.5 s later, well inside the grace.
+rc=0
+FAKE_BWRAP_STALL=1 FAKE_BWRAP_STALL_SECONDS=4 FAKE_BWRAP_LOG="$rate_limit_log" \
+  FAKE_BWRAP_SLOW_EVENT='{"type":"step_start"}' run_runner --workspace "$WS" \
+  --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 3 \
+  -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 0 ] && pass "an event after a scanned error keeps the run going" \
+  || fail "error then progress: rc=$rc"
 
 # A rate-limited title request does not block the run, so it is not a stop reason.
 rc=0

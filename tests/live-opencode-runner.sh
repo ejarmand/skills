@@ -6,8 +6,8 @@
 # the profile's openrouter baseURL points at the fake, and throwaway
 # credentials stand in for the stored ones. Checks that an open stdin pipe no longer
 # hangs, that a provider which never answers ends in a clean error, that a
-# long retry-after exits 76, and that the idle watchdog reports what OpenCode
-# was waiting on. Takes about two minutes.
+# long retry-after on a 429 or 503 exits 76, and that the idle watchdog reports
+# what OpenCode was waiting on. Takes about two minutes.
 set -u -o pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)" || exit 1
@@ -37,7 +37,8 @@ git -C "$TMP/ws" init -q && echo hello > "$TMP/ws/README" && git -C "$TMP/ws" ad
 
 cat > "$TMP/fakeprov.py" <<'PY'
 # Fake OpenAI-compatible provider. MODE ok: stream "OK"; hang: accept and never
-# answer; 429: rate limit with a 900 s retry-after. Writes its port to argv[2].
+# answer; 429 or 503: rate limit or overload with a 900 s retry-after. Writes
+# its port to argv[2].
 import http.server, json, sys, time
 mode = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
@@ -46,9 +47,10 @@ class H(http.server.BaseHTTPRequestHandler):
         self.rfile.read(int(self.headers.get("content-length", 0)))
         if mode == "hang":
             time.sleep(3600)
-        if mode == "429":
-            body = b'{"error":{"message":"Rate limit exceeded","code":429}}'
-            self.send_response(429)
+        if mode in ("429", "503"):
+            message = "Rate limit exceeded" if mode == "429" else "Service overloaded"
+            body = json.dumps({"error": {"message": message, "code": int(mode)}}).encode()
+            self.send_response(int(mode))
             self.send_header("retry-after", "900")
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -127,6 +129,12 @@ run_live --rate-limit-grace 5
 [ "$rc" -eq 76 ] && grep -q 'Rate limit exceeded' "$TMP/err" \
   && pass "rate-limited provider: exit 76 in ${elapsed}s" \
   || fail "rate-limited provider: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
+
+start_provider 503
+run_live --rate-limit-grace 5
+[ "$rc" -eq 76 ] && grep -q 'Service overloaded' "$TMP/err" \
+  && pass "overloaded provider: exit 76 in ${elapsed}s" \
+  || fail "overloaded provider: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
 
 [ -z "$(ls -A "$TMP/state")" ] && pass "runner left no disposable state" \
   || fail "runner left state: $(ls "$TMP/state")"
