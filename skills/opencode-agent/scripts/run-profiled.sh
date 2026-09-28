@@ -7,12 +7,19 @@
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME \
 #   --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] \
+#   [--provider-timeout SECONDS] [--rate-limit-grace SECONDS] \
 #   [--idle-timeout SECONDS] -- "PROMPT"
 #
 # --agent selects the profile's primary agent (default: reviewer).
 # --variant passes a provider-specific reasoning setting through unchanged.
-# --idle-timeout stops a run that emits no event for that long (default 600)
-# and exits EX_STALL; OpenCode can otherwise hang indefinitely (#53).
+# --provider-timeout bounds the wait for a provider's response headers and
+# between stream chunks (default 120; OpenCode's own default is 300 per
+# attempt, retried about nine times, with no output). Profile values win.
+# --rate-limit-grace stops a run once OpenCode logs a rate-limit error and then
+# emits no event for that long (default 60), and exits EX_RATE_LIMITED;
+# OpenCode otherwise waits out any retry-after silently.
+# --idle-timeout stops a run that emits no event for that long (default 1800),
+# reports what OpenCode was waiting on, and exits EX_STALL (#53).
 
 set -u -o pipefail
 
@@ -20,10 +27,11 @@ EX_USAGE=2
 EX_CLEANUP=70
 EX_SETUP=71
 EX_STALL=75
+EX_RATE_LIMITED=76
 
 err() { printf 'run-profiled: %s\n' "$*" >&2; }
 usage() {
-  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] [--idle-timeout SECONDS] -- "PROMPT"'
+  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] [--provider-timeout SECONDS] [--rate-limit-grace SECONDS] [--idle-timeout SECONDS] -- "PROMPT"'
   exit "$EX_USAGE"
 }
 
@@ -32,7 +40,9 @@ profile=""
 model=""
 variant=""
 agent="reviewer"
-idle_timeout=600
+provider_timeout=120
+rate_limit_grace=60
+idle_timeout=1800
 while [ $# -gt 0 ]; do
   case "$1" in
     --workspace) [ $# -ge 2 ] || usage; workspace="$2"; shift 2 ;;
@@ -40,6 +50,8 @@ while [ $# -gt 0 ]; do
     --model)     [ $# -ge 2 ] || usage; model="$2"; shift 2 ;;
     --variant)   [ $# -ge 2 ] && [ -n "$2" ] || usage; variant="$2"; shift 2 ;;
     --agent)     [ $# -ge 2 ] || usage; agent="$2"; shift 2 ;;
+    --provider-timeout) [ $# -ge 2 ] || usage; provider_timeout="$2"; shift 2 ;;
+    --rate-limit-grace) [ $# -ge 2 ] || usage; rate_limit_grace="$2"; shift 2 ;;
     --idle-timeout) [ $# -ge 2 ] || usage; idle_timeout="$2"; shift 2 ;;
     --) shift; break ;;
     -h|--help) usage ;;
@@ -54,7 +66,9 @@ prompt="$1"
 case "$workspace" in /*) ;; *) err "workspace must be absolute: $workspace"; exit "$EX_USAGE" ;; esac
 case "$model" in */*) ;; *) err "model must use provider/model form: $model"; exit "$EX_USAGE" ;; esac
 case "$variant" in ""|[a-z]*) ;; *) err "variant must be a plain word: $variant"; exit "$EX_USAGE" ;; esac
-case "$idle_timeout" in ""|0|*[!0-9]*) err "idle timeout must be a positive integer: $idle_timeout"; exit "$EX_USAGE" ;; esac
+for seconds in "$provider_timeout" "$rate_limit_grace" "$idle_timeout"; do
+  case "$seconds" in ""|0*|*[!0-9]*) err "timeouts must be positive integers: $seconds"; exit "$EX_USAGE" ;; esac
+done
 variant_args=()
 [ -z "$variant" ] || variant_args=(--variant "$variant")
 [ "$(uname -s)" = Linux ] || { err 'profiled OpenCode dispatch requires Linux'; exit "$EX_SETUP"; }
@@ -88,7 +102,10 @@ gh_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}"
 [ -f "$gh_config/hosts.yml" ] \
   || { err "no gh authentication in $gh_config; run gh auth login first"; exit "$EX_SETUP"; }
 
-config_json="$(< "$profile_file")" || { err 'cannot read profile config'; exit "$EX_SETUP"; }
+# A stalled provider otherwise leaves OpenCode silent for up to 300 s per attempt.
+config_json="$(jq -c --arg id "${model%%/*}" --argjson ms "$((provider_timeout * 1000))" \
+  '.provider[$id].options |= {headerTimeout: $ms, chunkTimeout: $ms} + .' "$profile_file")" \
+  || { err 'cannot read profile config'; exit "$EX_SETUP"; }
 run_dir="$(mktemp -d "${TMPDIR:-/tmp}/opencode-profile.XXXXXXXX")" \
   || { err 'cannot create disposable OpenCode state'; exit "$EX_SETUP"; }
 child=""
@@ -157,27 +174,78 @@ bwrap \
   --setenv OPENCODE_PURE 1 \
   --setenv OPENCODE_CONFIG_CONTENT "$config_json" \
   /opt/opencode run --pure --format json --agent "$agent" --model "$model" "${variant_args[@]}" -- "$prompt" \
-  > "$events" &
+  < /dev/null > "$events" &
 child=$!
 
-line=""
-read_status=0
-while :; do
-  IFS= read -r -t "$idle_timeout" line || { read_status=$?; break; }
-  printf '%s\n' "$line"
-done < "$events"
-[ -z "$line" ] || printf '%s' "$line"
+# Report what the stalled OpenCode process (the first one below bwrap) waits on.
+report_stall() {
+  local parents="$child" rows="" pid=""
+  while [ -n "$parents" ]; do
+    rows="$(ps -o pid=,comm= --ppid "$parents")" || break
+    pid="$(awk '$2 == "opencode" { print $1; exit }' <<< "$rows")"
+    [ -z "$pid" ] || break
+    parents="$(awk '{ print $1 }' <<< "$rows" | paste -sd, -)"
+  done
+  [ -n "$pid" ] || { err 'no OpenCode process found'; return; }
+  err "OpenCode pid $pid stdin: $(readlink "/proc/$pid/fd/0")"
+  err "OpenCode pid $pid wchan: $(cat "/proc/$pid/wchan")"
+  err "OpenCode pid $pid established TCP connections:"
+  ss -tnpH state established | grep -F "pid=$pid," >&2 || err '  none'
+}
 
-if [ "$read_status" -gt 128 ]; then
-  kill "$child" 2>/dev/null
-  wait "$child"
-  err "no OpenCode event for ${idle_timeout}s; stopped the run. Log tail:"
-  tail -n 20 "$state_root/data/opencode/log/opencode.log" >&2 2>/dev/null
-  child_exit="$EX_STALL"
-else
-  wait "$child"
-  child_exit=$?
-fi
+# Relay events byte for byte, waking each second to check the log and the idle
+# clock. read -t keeps a partial line on timeout, so pieces collect in buf.
+log="$state_root/data/opencode/log/opencode.log"
+# A rate-limit stream error logged after the last event (past log_seen bytes).
+# Title generation (small=true) failing does not block the run.
+rate_limit_re='message="stream error".* small=false .*error\.error=.*(\b429\b|rate[ _-]?limit|too many requests)'
+buf=""
+line=""
+stop=""
+last_event=$SECONDS
+log_seen=0
+limited=""
+limited_at=0
+while :; do
+  read_status=0
+  IFS= read -r -t 1 line || read_status=$?
+  if [ "$read_status" -eq 0 ]; then
+    log_seen="$(stat -c %s "$log" 2>/dev/null)" || log_seen=0
+    printf '%s\n' "$buf$line"
+    buf="" line="" limited="" last_event=$SECONDS
+    continue
+  fi
+  [ "$read_status" -gt 128 ] || break
+  [ -z "$line" ] || { buf+="$line"; line=""; last_event=$SECONDS; }
+  if [ -z "$limited" ]; then
+    limited="$(tail -c +"$((log_seen + 1))" "$log" 2>/dev/null | grep -m 1 -Ei -- "$rate_limit_re")"
+    limited_at=$SECONDS
+  elif [ $((SECONDS - limited_at)) -ge "$rate_limit_grace" ]; then
+    stop=rate-limited; break
+  fi
+  [ $((SECONDS - last_event)) -lt "$idle_timeout" ] || { stop=idle; break; }
+done < "$events"
+[ -z "$buf$line" ] || printf '%s' "$buf$line"
+
+case "$stop" in
+  idle)
+    err "no OpenCode event for ${idle_timeout}s; stopped the run."
+    report_stall
+    kill "$child" 2>/dev/null
+    wait "$child"
+    err 'Log tail:'
+    tail -n 20 "$log" >&2 2>/dev/null
+    child_exit="$EX_STALL" ;;
+  rate-limited)
+    kill "$child" 2>/dev/null
+    wait "$child"
+    err "provider rate limit and no OpenCode event for ${rate_limit_grace}s; stopped the run:"
+    printf '%s\n' "$limited" >&2
+    child_exit="$EX_RATE_LIMITED" ;;
+  *)
+    wait "$child"
+    child_exit=$? ;;
+esac
 child=""
 
 if ! rm -rf "$run_dir"; then

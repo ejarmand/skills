@@ -35,12 +35,29 @@ if [ "${1:-}" = --help ]; then
   exit 0
 fi
 printf '%s\n' "$@" > "$BWRAP_ARGS"
+readlink /proc/$$/fd/0 > "$BWRAP_ARGS.stdin"
+if [ -n "${FAKE_BWRAP_LOG:-}" ]; then
+  state="$(printf '%s\n' "$@" | awk 'previous == "--bind" { print; exit } { previous=$0 }')"
+  mkdir -p "$state/data/opencode/log" || exit 98
+  printf '%s\n' "$FAKE_BWRAP_LOG" >> "$state/data/opencode/log/opencode.log"
+fi
 [ -z "${FAKE_BWRAP_EVENT:-}" ] || printf '%s\n' "$FAKE_BWRAP_EVENT"
-[ -z "${FAKE_BWRAP_STALL:-}" ] || exec sleep 30
+if [ -n "${FAKE_BWRAP_SLOW_EVENT:-}" ]; then
+  printf '%s' "${FAKE_BWRAP_SLOW_EVENT:0:10}"
+  sleep 2.5
+  printf '%s\n' "${FAKE_BWRAP_SLOW_EVENT:10}"
+fi
+if [ -n "${FAKE_BWRAP_STALL:-}" ]; then
+  # A sleep named opencode stands in for the sandboxed process.
+  "$FAKE_SANDBOXED" 30 <&0 &
+  trap 'kill $!; exit 143' TERM
+  wait
+fi
 exit "${FAKE_BWRAP_EXIT:-0}"
 FAKE
 
 chmod +x "$FAKE_BIN/opencode" "$FAKE_BIN/gh" "$FAKE_BIN/bwrap" || exit 1
+mkdir -p "$TMP/sandboxed" && ln -s "$(command -v sleep)" "$TMP/sandboxed/opencode" || exit 1
 
 WS="$TMP/workspace"
 RUN_TMPDIR="$TMP/state"
@@ -53,8 +70,11 @@ run_runner() {
   env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR \
     PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
     HOME="$FAKE_HOME" XDG_DATA_HOME="$FAKE_DATA" \
-    BWRAP_ARGS="$TMP/bwrap.args" \
+    BWRAP_ARGS="$TMP/bwrap.args" FAKE_SANDBOXED="$TMP/sandboxed/opencode" \
     "$RUNNER" "$@"
+}
+config_arg() {
+  awk 'previous == "OPENCODE_CONFIG_CONTENT" { print; exit } { previous=$0 }' "$TMP/bwrap.args"
 }
 
 # A profiled dispatch is one model, one prompt, and one disposable boundary.
@@ -97,6 +117,39 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 [ -n "$state_root" ] || fail "writable state bind missing"
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "disposable state removed after dispatch" || fail "state was not cleaned up: $state_root"
+[ "$(config_arg | jq -c '.provider')" = '{"openrouter":{"options":{"headerTimeout":120000,"chunkTimeout":120000}}}' ] \
+  && pass "selected provider gets default header and chunk timeouts" \
+  || fail "default provider timeouts: $(config_arg | jq -c '.provider')"
+
+# OpenCode reads a non-terminal stdin to its end before creating a session.
+mkfifo "$TMP/stdin.fifo" && exec 3<> "$TMP/stdin.fifo" || exit 1
+rm -f "$TMP/bwrap.args"
+rc=0
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "task" <&3 >/dev/null 2>&1 || rc=$?
+exec 3>&-
+[ "$rc" -eq 0 ] && [ "$(cat "$TMP/bwrap.args.stdin")" = /dev/null ] \
+  && pass "sandbox stdin is /dev/null even when the runner's stdin is an open pipe" \
+  || fail "sandbox stdin: rc=$rc stdin=$(cat "$TMP/bwrap.args.stdin")"
+
+# The provider timeout follows the model's provider and the requested value.
+rm -f "$TMP/bwrap.args"
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model opencode/example-model --provider-timeout 30 -- "task" >/dev/null 2>&1
+[ "$(config_arg | jq -c '.provider')" = '{"opencode":{"options":{"headerTimeout":30000,"chunkTimeout":30000}}}' ] \
+  && pass "provider timeout override reaches the selected provider" \
+  || fail "provider timeout override: $(config_arg | jq -c '.provider')"
+
+# Provider options the profile sets win over the runner's defaults.
+mkdir -p "$TMP/skills" && cp -R "$REPO/skills/opencode-agent" "$TMP/skills/" || exit 1
+custom_profile="$TMP/skills/opencode-agent/profiles/github-pr-reviewer/config.json"
+jq '.provider.openrouter.options = {headerTimeout: 5000, baseURL: "http://127.0.0.1:9/v1"}' "$PROFILE" > "$custom_profile" || exit 1
+rm -f "$TMP/bwrap.args"
+RUNNER="$TMP/skills/opencode-agent/scripts/run-profiled.sh" run_runner --workspace "$WS" \
+  --profile github-pr-reviewer --model openrouter/example-model -- "task" >/dev/null 2>&1
+[ "$(config_arg | jq -c '.provider.openrouter.options')" = '{"headerTimeout":5000,"chunkTimeout":120000,"baseURL":"http://127.0.0.1:9/v1"}' ] \
+  && pass "profile provider options win over runner timeouts" \
+  || fail "profile provider options: $(config_arg | jq -c '.provider.openrouter.options')"
 
 # The requested model variant reaches OpenCode as an argument, not prompt text.
 rm -f "$TMP/bwrap.args"
@@ -140,15 +193,46 @@ out="$(FAKE_BWRAP_EVENT='{"type":"step_start"}' run_runner --workspace "$WS" \
   --profile github-pr-reviewer --model openrouter/example-model -- "task")"
 [ "$out" = '{"type":"step_start"}' ] && pass "runner relays OpenCode events" || fail "events not relayed: $out"
 
+# A line that arrives across several one-second wakes is reassembled intact.
+out="$(FAKE_BWRAP_SLOW_EVENT='{"type":"text","part":{"text":" a \\ b "}}' run_runner --workspace "$WS" \
+  --profile github-pr-reviewer --model openrouter/example-model -- "task")"
+[ "$out" = '{"type":"text","part":{"text":" a \\ b "}}' ] \
+  && pass "runner reassembles a slowly written event" || fail "slow event mangled: $out"
+
+# A logged rate limit followed by silence stops the run instead of waiting out retry-after.
+rate_limit_log='timestamp=2026-09-28T21:56:25.444Z level=ERROR run=ed6a999c message="stream error" providerID=openrouter modelID=z-ai/glm-5.3-flash session.id=ses_1 small=false agent=reviewer mode=primary error.error="AI_APICallError: Rate limit exceeded"'
+rm -f "$TMP/bwrap.args"
+rc=0
+started=$SECONDS
+err="$(FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$rate_limit_log" run_runner --workspace "$WS" \
+  --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 1 -- "task" 2>&1 >/dev/null)" || rc=$?
+state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
+[ "$rc" -eq 76 ] && [ $((SECONDS - started)) -lt 10 ] && grep -Fq -- "$rate_limit_log" <<< "$err" \
+  && pass "rate-limited run exits 76 and shows the logged error" \
+  || fail "rate-limited run: rc=$rc after $((SECONDS - started))s: $err"
+[ -n "$state_root" ] && [ ! -e "$state_root" ] \
+  && pass "rate-limited run state is removed" || fail "rate-limited run left state: $state_root"
+
+# A rate-limited title request does not block the run, so it is not a stop reason.
+rc=0
+FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="${rate_limit_log/small=false/small=true}" run_runner --workspace "$WS" \
+  --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 1 --idle-timeout 4 \
+  -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 75 ] && pass "title rate limit falls through to the idle watchdog" || fail "title rate limit: rc=$rc"
+
 # A silent run is stopped at the idle timeout rather than hanging.
 rm -f "$TMP/bwrap.args"
 rc=0
 started=$SECONDS
-FAKE_BWRAP_STALL=1 run_runner --workspace "$WS" --profile github-pr-reviewer \
-  --model openrouter/example-model --idle-timeout 1 -- "task" >/dev/null 2>&1 || rc=$?
+err="$(FAKE_BWRAP_STALL=1 run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model --idle-timeout 1 -- "task" 2>&1 >/dev/null)" || rc=$?
 state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
 [ "$rc" -eq 75 ] && [ $((SECONDS - started)) -lt 10 ] \
   && pass "stalled run exits 75 at the idle timeout" || fail "stalled run: rc=$rc after $((SECONDS - started))s"
+grep -Eq 'OpenCode pid [0-9]+ stdin: /dev/null' <<< "$err" \
+  && grep -Eq 'OpenCode pid [0-9]+ wchan: .' <<< "$err" \
+  && grep -Eq 'OpenCode pid [0-9]+ established TCP connections:' <<< "$err" \
+  && pass "stall report shows what OpenCode was waiting on" || fail "stall report missing: $err"
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "stalled run state is removed" || fail "stalled run left state: $state_root"
 
@@ -156,6 +240,7 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 rm -f "$TMP/bwrap.args"
 env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
   HOME="$FAKE_HOME" XDG_DATA_HOME="$FAKE_DATA" BWRAP_ARGS="$TMP/bwrap.args" FAKE_BWRAP_STALL=1 \
+  FAKE_SANDBOXED="$TMP/sandboxed/opencode" \
   "$RUNNER" --workspace "$WS" --profile github-pr-reviewer \
   --model openrouter/example-model -- "task" >/dev/null 2>&1 &
 runner_pid=$!
