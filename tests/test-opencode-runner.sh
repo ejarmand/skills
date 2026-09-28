@@ -171,6 +171,32 @@ run_runner --workspace "$WS" --profile github-pr-reviewer \
 [ "$rc" -eq 2 ] && [ ! -f "$TMP/bwrap.args" ] \
   && pass "empty explicit variant is refused before launch" || fail "empty variant refusal: rc=$rc"
 
+# The workspace keeps its own path, and a linked worktree also gets its
+# repository's git dir, so git and gh resolve the repository in the sandbox.
+bind_pair() {
+  awk -v path="$1" 'previous == "--ro-bind" && $0 == path { getline; if ($0 == path) found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args"
+}
+chdir_arg() {
+  awk 'previous == "--chdir" { print; exit } { previous=$0 }' "$TMP/bwrap.args"
+}
+repo="$TMP/repo"
+git init -q "$repo" && git -C "$repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init \
+  && git -C "$repo" worktree add -q --detach "$TMP/linked" || fail "cannot create a linked worktree"
+common="$(cd "$repo/.git" && pwd -P)"
+linked="$(cd "$TMP/linked" && pwd -P)"
+rm -f "$TMP/bwrap.args"
+run_runner --workspace "$linked" --profile github-pr-reviewer --model openrouter/example-model -- "task" >/dev/null 2>&1
+bind_pair "$linked" && [ "$(chdir_arg)" = "$linked" ] \
+  && pass "workspace is mounted and entered at its own path" || fail "workspace not at its own path: $(chdir_arg)"
+bind_pair "$common" \
+  && pass "linked worktree's repository git dir is mounted read-only" || fail "common git dir not mounted: $common"
+rm -f "$TMP/bwrap.args"
+run_runner --workspace "$(cd "$repo" && pwd -P)" --profile github-pr-reviewer --model openrouter/example-model -- "task" >/dev/null 2>&1
+bind_pair "$common" && fail "main checkout's own git dir mounted twice" || pass "main checkout needs no extra git mount"
+rm -f "$TMP/bwrap.args"
+run_runner --workspace "$WS" --profile github-pr-reviewer --model openrouter/example-model -- "task" >/dev/null 2>&1
+grep -q '/\.git$' "$TMP/bwrap.args" && fail "non-git workspace got a git mount" || pass "non-git workspace gets no git mount"
+
 # OpenCode would silently replace a subagent with its default agent.
 for bad_agent in spec build; do
   rm -f "$TMP/bwrap.args"

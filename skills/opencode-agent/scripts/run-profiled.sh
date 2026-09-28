@@ -95,6 +95,12 @@ opencode_bin="$(readlink -f "$opencode_bin")" || { err 'cannot resolve opencode 
 gh_bin="$(command -v gh)" || { err 'GitHub CLI is required'; exit "$EX_SETUP"; }
 gh_bin="$(readlink -f "$gh_bin")" || { err 'cannot resolve GitHub CLI executable'; exit "$EX_SETUP"; }
 
+# git, and gh through it, must reach the repository's shared git dir, which a
+# linked worktree or a subdirectory checkout keeps outside the workspace.
+git_args=()
+common_dir="$(git -C "$workspace" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common_dir=""
+case "$common_dir" in ""|"$workspace"/*) ;; *) git_args=(--ro-bind "$common_dir" "$common_dir") ;; esac
+
 auth_json="${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json"
 [ -f "$auth_json" ] \
   || { err "no OpenCode provider credentials in $auth_json; run opencode auth login first"; exit "$EX_SETUP"; }
@@ -152,13 +158,14 @@ bwrap \
   --dir /opt \
   --ro-bind "$opencode_bin" /opt/opencode \
   --ro-bind "$gh_bin" /opt/gh \
-  --ro-bind "$workspace" /workspace \
+  --ro-bind "$workspace" "$workspace" \
+  "${git_args[@]}" \
   --ro-bind "$repo_skills" /skills \
   --bind "$state_root" /state \
   --ro-bind "$auth_json" /state/data/opencode/auth.json \
   --ro-bind "$gh_config" /state/config/gh \
   --ro-bind "$state_root/config/opencode" /state/config/opencode \
-  --chdir /workspace \
+  --chdir "$workspace" \
   --setenv PATH /opt:/usr/bin:/bin \
   --setenv HOME /state/home \
   --setenv XDG_CONFIG_HOME /state/config \

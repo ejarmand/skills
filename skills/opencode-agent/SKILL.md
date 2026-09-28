@@ -54,6 +54,10 @@ selected model does not support it. `--agent` picks another primary agent from
 the profile; the runner refuses subagents, which OpenCode would otherwise
 silently swap for its default agent.
 
+The runner mounts the workspace read-only at its own path, and a linked
+worktree's repository git dir with it, so `git` and `gh` work inside as they do
+outside; `gh` needs no `--repo`.
+
 OpenCode prints nothing while it waits on a provider, so the runner bounds
 those waits:
 
