@@ -204,32 +204,47 @@ buf=""
 line=""
 stop=""
 last_event=$SECONDS
+event_ms=""
 log_seen=0
 scanned_at=-1
 limited=""
 limited_at=0
+limited_ms=""
 while :; do
   read_status=0
   IFS= read -r -t 1 line || read_status=$?
   if [ "$read_status" -eq 0 ]; then
     printf '%s\n' "$buf$line"
-    buf="" line="" limited="" last_event=$SECONDS
+    # An event newer than the error clears it. Events and errors are ordered by
+    # OpenCode's timestamps, or by read order when either has none.
+    ts=""
+    [[ "$buf$line" =~ ^\{\"type\":\"[^\"]*\",\"timestamp\":([0-9]+) ]] && ts=${BASH_REMATCH[1]}
+    [ -z "$ts" ] || [ "$ts" -le "${event_ms:-0}" ] || event_ms=$ts
+    [ -n "$ts" ] && [ -n "$limited_ms" ] && [ "$ts" -lt "$limited_ms" ] || limited=""
+    buf="" line="" last_event=$SECONDS
   elif [ "$read_status" -gt 128 ]; then
     [ -z "$line" ] || { buf+="$line"; line=""; last_event=$SECONDS; }
   else
     break
   fi
-  # Scan the log bytes written since the last scan, at most once a second. An
-  # error counts from when it is scanned, so a later event still clears it.
+  # Scan the log bytes written since the last scan, at most once a second. The
+  # newest error counts only if newer than every event seen; the grace runs
+  # from when the runner first sees an error.
   if [ "$SECONDS" -ne "$scanned_at" ]; then
     scanned_at=$SECONDS
     log_size="$(stat -c %s "$log" 2>/dev/null)" || log_size=0
     if [ "$log_size" -gt "$log_seen" ]; then
       found="$(tail -c +"$((log_seen + 1))" "$log" | head -c "$((log_size - log_seen))" \
         | grep -F -- 'message="stream error"' | grep -Ei -- "$limit_re" \
-        | grep -Ev -m 1 -- '(^|[[:space:]])small=true([[:space:]]|$)')"
+        | grep -Ev -- '(^|[[:space:]])small=true([[:space:]]|$)' | tail -n 1)"
       log_seen=$log_size
-      [ -z "$found" ] || [ -n "$limited" ] || { limited="$found"; limited_at=$SECONDS; }
+      if [ -n "$found" ]; then
+        found_ms=""
+        [[ "$found" =~ ^timestamp=([^[:space:]]+) ]] && found_ms="$(date -d "${BASH_REMATCH[1]}" +%s%3N 2>/dev/null)"
+        [[ "$found_ms" =~ ^[0-9]+$ ]] || found_ms=""
+        [ -n "$found_ms" ] && [ -n "$event_ms" ] && [ "$found_ms" -le "$event_ms" ] \
+          || { [ -n "$limited" ] || limited_at=$SECONDS; limited="$found"; limited_ms=$found_ms; }
+      fi
     fi
   fi
   [ -z "$limited" ] || [ $((SECONDS - limited_at)) -lt "$rate_limit_grace" ] || { stop=rate-limited; break; }

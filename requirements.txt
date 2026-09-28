@@ -9,6 +9,7 @@ claude           # claude-agent, cross-provider-agent, pr-ping-pong, agent-resum
 codex            # codex-agent, batch-luna-agents, cross-provider-agent, pr-ping-pong, agent-resume
 curl             # html-visualization
 cursor-agent     # cursor-agent, cross-provider-agent, pr-ping-pong
+date             # opencode-agent profiled runner rate-limit timestamps; GNU-compatible -d required
 gh               # GitHub work records, review, specification, ticket, and rally skills
 git              # implementation, review, prototype, and orchestration skills
 jq               # cursor-agent and opencode-agent profiled runners
