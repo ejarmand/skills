@@ -32,8 +32,8 @@ Resolve from the request, then state the resolved set before starting.
 | merge on pass | `false` |
 | new PR worktree | `REPO_ROOT/worktrees/[branch]` |
 
-Honor explicit reviewer overrides. Never let a reviewer share the implementation
-session.
+Honor explicit reviewer overrides subject to the repository's data-sharing
+restrictions below. Never let a reviewer share the implementation session.
 
 
 ## Preflight
@@ -108,7 +108,9 @@ authority. On top of that, each coordinator's prompt includes:
   whose first line is `<model> / rally <n> / <head OID>`.
 - path to local checkout/worktree
 
-Before dispatching each reviewer, record the current PR comment IDs using
+Before every reviewer dispatch, apply the repository's data-sharing restrictions
+below, including to explicit overrides. Explain any excluded reviewers and their
+replacements. Then record the current PR comment IDs using
 `gh api repos/{owner}/{repo}/issues/N/comments --paginate`. After its run,
 read the comments again. Count the review as complete only if a new comment
 ID identifies a comment whose body first line exactly matches that reviewer's
@@ -127,8 +129,15 @@ reviewer.
 
 #### review agent defaults
 
-Run the two default adversarial reviewers and every free reviewer on each
-rally.
+Run the two default adversarial reviewers and every permitted free reviewer on
+each rally.
+
+Muse Spark 1.3 Contributor Free and MiMo-V2.6-Flash Free share submitted data.
+Where repository policy prohibits Muse's Contributor tier, also prohibit MiMo
+Free. Apply this restriction before selecting the default pair, bonus roster,
+or explicit reviewer overrides; an override does not bypass it. MiMo Free's
+collected data may be used to improve the model; see
+[OpenCode Zen privacy](https://opencode.ai/docs/zen/#privacy).
 
 | Implementer model provider | Default reviewer 1 | Default reviewer 2 |
 |---|---|---|
@@ -136,18 +145,26 @@ rally.
 | Cursor | GPT-6.1 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
 | Any other provider | GPT-6.1 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
 
+When Muse is prohibited, use GPT-6.1 Sol through Codex (`high`) and Cursor Grok
+4.5 (`high`, standard speed) as the default pair. Prefer a permitted reviewer
+from another provider over the implementer's provider when one is available.
+If the pair must include the implementer's provider, use a fresh session as
+required above. Exclude both Muse Contributor Free and MiMo Free from the bonus
+roster as well.
+
 | Free model | Transport | Effort |
 |---|---|---|
 | GPT-6 Luna | Codex | `high` |
 | Muse Spark 1.3 Contributor Free | OpenCode Zen | `high` |
-| GLM 5.3 Flash | OpenCode through OpenRouter | `high` |
+| MiMo-V2.6-Flash Free (`opencode/mimo-v2.6-flash-free`) | OpenCode Zen | Model default |
 
-Free reviewers should  be used even if they duplicate the implementer, just use a fresh context.
+Permitted free reviewers should be used even if they duplicate the implementer,
+just use a fresh context.
 
 Use subscription-backed native CLIs for OpenAI, Anthropic, and Cursor models.
-Use OpenCode for Muse and GLM; pass `--variant high` to its profiled runner for
-the reviewers listed above. Do not select Fable or Opus unless the user asks
-for them directly.
+Use OpenCode Zen for Muse and MiMo. Pass `--variant high` to its profiled runner
+for Muse; MiMo uses model-default effort and does not support a `high` variant.
+Do not select Fable or Opus unless the user asks for them directly.
 
 ### 4. Adjudicate findings
 
