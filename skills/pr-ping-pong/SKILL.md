@@ -96,7 +96,7 @@ prompt as `git diff BASE_OID...HEAD_OID`.
 
 ### 3. Review
 
-Each selected reviewer model runs **one fresh review coordinator per rally**,
+Each selected reviewer model runs **a fresh review coordinator per rally**,
 dispatched through `/cross-provider-agent` under the `github-pr-reviewer`
 profile with the absolute `checkout`. The coordinator invokes `/code-review`which spawns its two
 context-isolated native children (Standards, Spec) inside the profile's
@@ -108,7 +108,8 @@ authority. On top of that, each coordinator's prompt includes:
   whose first line is `<model> / rally <n> / <head OID>`.
 - path to local checkout/worktree
 
-Before dispatching each reviewer, record the current PR comment IDs using
+Before every reviewer dispatch, apply the data-sharing restrictions under
+review agent defaults below. Then record the current PR comment IDs using
 `gh api repos/{owner}/{repo}/issues/N/comments --paginate`. After its run,
 read the comments again. Count the review as complete only if a new comment
 ID identifies a comment whose body first line exactly matches that reviewer's
@@ -120,6 +121,13 @@ after snapshot. Do not count a failed review toward Pass.
 Wrap every reviewer dispatch in `timeout` (45 minutes is ample). Reviewer CLIs
 can hang without output, and a timed-out review is a failed review.
 
+A failed review blocks only that reviewer slot. Correct its dispatch or
+publication and retry, or choose a permitted replacement consistent with explicit
+model choices. Use fresh sessions for redispatched reviews and retain other
+verified reviews on the same pinned head. Continue the remaining reviews and
+adjudication. Stop retrying a slot only when no corrective action or permitted
+replacement remains, and report it as unresolved.
+
 
 * note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
 clean-tree verification. When using it run reviewers sequentially, or pin one checkout per
@@ -127,8 +135,17 @@ reviewer.
 
 #### review agent defaults
 
-Run the two default adversarial reviewers and every free reviewer on each
-rally.
+Run the two default adversarial reviewers and every permitted free reviewer on
+each rally.
+
+MiMo-V2.6-Flash Free collects data that may be used to improve the model; see
+[OpenCode Zen privacy](https://opencode.ai/docs/zen/#privacy). Wherever repository
+policy prohibits Muse's Contributor tier, also prohibit MiMo Free, including
+explicit reviewer overrides. Replace only prohibited default-pair seats with
+permitted reviewers from another provider than the implementer when available,
+and keep the permitted seats. Omit prohibited bonus reviewers. Choose replacements
+consistent with explicit model choices; if none are permitted, report the slot
+as unresolved. Explain exclusions and replacements before dispatch.
 
 | Implementer model provider | Default reviewer 1 | Default reviewer 2 |
 |---|---|---|
@@ -140,14 +157,15 @@ rally.
 |---|---|---|
 | GPT-6 Luna | Codex | `high` |
 | Muse Spark 1.3 Contributor Free | OpenCode Zen | `high` |
-| GLM 5.3 Flash | OpenCode through OpenRouter | `high` |
+| MiMo-V2.6-Flash Free (`opencode/mimo-v2.6-flash-free`) | OpenCode Zen | Model default |
 
-Free reviewers should  be used even if they duplicate the implementer, just use a fresh context.
+Permitted free reviewers should be used even if they duplicate the implementer,
+just use a fresh context.
 
 Use subscription-backed native CLIs for OpenAI, Anthropic, and Cursor models.
-Use OpenCode for Muse and GLM; pass `--variant high` to its profiled runner for
-the reviewers listed above. Do not select Fable or Opus unless the user asks
-for them directly.
+Use OpenCode Zen for Muse and MiMo. Pass `--variant high` to its profiled runner
+for Muse; MiMo uses model-default effort and does not support a `high` variant.
+Do not select Fable or Opus unless the user asks for them directly.
 
 ### 4. Adjudicate findings
 
@@ -164,12 +182,13 @@ Where reviewers disagree, use your judgement
 
 Stop and report at the first of these:
 
-1. **Pass** — every reviewer published a verified comment and no meaningful
-   findings remain after adjudication.
-2. **Budget** — rally cap reached. Report the surviving findings.
-3. **Failure** — an implementer errors or cannot proceed, a reviewer fails to
-   publish its matching comment, or the branch stops building. Report the
-   state; do not burn rallies on a broken tree.
+1. **Pass** — every required reviewer slot has a verified comment and no
+   meaningful findings remain after adjudication.
+2. **Budget** — rally cap reached. Report the surviving findings and unresolved
+   reviewer slots.
+3. **Failure** — an implementer errors or cannot proceed, or the branch stops
+   building. Report the state; do not burn rallies on a broken tree. Reviewer
+   failures use the recovery procedure above and do not stop the PR process.
 
 ## Merge
 
