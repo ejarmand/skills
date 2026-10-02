@@ -136,8 +136,9 @@ clean-tree check in that workspace would fail. With one shared `checkout`,
 give Cursor its own phase: start the other reviewers together and wait for all
 of them, then run Cursor, or run Cursor first and start the others only after
 its runner exits 0 and `git status --porcelain` in the checkout is empty. Exit
-70 means a rollback failed and left `.cursor-profile-txn/` behind; don't start
-other reviewers in that checkout. To run every reviewer at once, point Cursor at its
+70 means the runner could not clean up, roll back, or recover and left
+`.cursor-profile-txn/` behind; don't start other reviewers in that checkout.
+To run every reviewer at once, point Cursor at its
 own detached worktree at the pinned head and remove it after the review. Two
 Cursor reviewers never share a workspace; the runner's lock rejects the second.
 
