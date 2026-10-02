@@ -22,11 +22,21 @@ opencode auth list
 OpenCode accepts stored provider credentials and providers' conventional
 environment variables.
 
+## Choose the provider route
+
+The `provider/` prefix decides who sees the prompt.
+
+- Paid models: use `opencode/<model>` (OpenCode Zen). Zen's paid models
+  follow its zero-retention policy; OpenAI and Anthropic models there are
+  retained 30 days.
+- Free, trial and Contributor models on Zen collect data. Use them only
+  where repository policy allows.
+
 ## Start and monitor a worker
 
 ```bash
 cd /absolute/path/to/workspace && \
-  opencode run --format json --model provider/model "TASK"
+  opencode run --format json --model opencode/<model> "TASK"
 ```
 
 
