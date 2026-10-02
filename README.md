@@ -1,25 +1,21 @@
 # Skills
 
 A curated, integrated collection of engineering and agent-orchestration skills.
-Every installable skill lives in the flat `skills/` tree, and `skill-router`
-maps the complete collection.
+Every installable skill lives in the flat `skills/` tree. The inventory below
+lists the complete collection.
 
 ## Inventory
 
 ### Routing and implementation flow
 
-- `skill-router` — choose the right skill or flow
 - `same-page` — agree on the goal and scope with the user before planning
 - `grill` — interview the user about a plan until you share one understanding
-- `handoff` — carry context into a fresh session
 - `prototype` — answer one design question with throwaway code
-- `to-spec` — turn a conversation into a spec and publish it as a GitHub issue
-- `to-tickets` — split a spec into tracer-bullet GitHub issues linked by
-  their blockers
 - `implement` — build a prepared spec or ticket test-first and commit the
   verified result
 - `tdd` — build behavior in red → green slices
 - `code-review` — review Standards and Spec as separate axes
+- `file-pr` — structure GitHub pull requests, issues, and comments
 
 ### On-ramps and codebase health
 
@@ -27,15 +23,13 @@ maps the complete collection.
 - `wayfinder` — map a multi-session effort as GitHub decision issues and
   resolve them one at a time
 - `codebase-design` — shared deep-module vocabulary
-- `domain-modeling` — sharpen domain language and decisions
 - `improve-codebase-architecture` — find and present deepening opportunities
 - `laziness-protocol` — prefer deletion and the smallest diff that solves the
   problem
 - `fix-steering` — audit session corrections and recommend prevention changes
 
-### Teaching and visualization
+### Writing and visualization
 
-- `teach` — run a stateful learning workspace
 - `bro` — restate the last response in plain, concise language
 - `unslop` — remove AI writing patterns and improve legibility
 - `writing-great-skills` — reference for authoring and editing skills
@@ -75,6 +69,9 @@ AGENTS_SKILLS_DIR=/path/to/agent-skills \
 BIN_DIR=/path/to/bin \
   scripts/link-skills.sh
 ```
+
+After skills are removed, rerun the installer to remove dangling links into
+this checkout. It preserves real directories and links into other checkouts.
 
 If a link name is already taken by a real file or directory, such as a copy
 from an older install, the installer lists every such path and asks once before

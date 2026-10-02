@@ -14,7 +14,7 @@ gh               # GitHub work records, review, specification, ticket, and rally
 git              # implementation, review, prototype, and orchestration skills
 jq               # cursor-agent and opencode-agent profiled runners
 md5sum           # cursor-agent profiled runner
-playwright-cli   # html-visualization, teach, improve-codebase-architecture
+playwright-cli   # html-visualization, improve-codebase-architecture
 python3          # html-visualization, fix-steering, agent-resume, scripts/link-skills.sh
 ss               # opencode-agent profiled runner stall report
 stat             # cursor-agent and opencode-agent profiled runners; GNU-compatible options required
