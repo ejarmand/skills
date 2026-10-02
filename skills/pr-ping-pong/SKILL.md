@@ -32,8 +32,8 @@ Resolve from the request, then state the resolved set before starting.
 | merge on pass | `false` |
 | new PR worktree | `REPO_ROOT/worktrees/[branch]` |
 
-Honor explicit reviewer overrides subject to the repository's data-sharing
-restrictions below. Never let a reviewer share the implementation session.
+Honor explicit reviewer overrides. Never let a reviewer share the implementation
+session.
 
 
 ## Preflight
@@ -96,7 +96,7 @@ prompt as `git diff BASE_OID...HEAD_OID`.
 
 ### 3. Review
 
-Each selected reviewer model runs **one fresh review coordinator per rally**,
+Each selected reviewer model runs **a fresh review coordinator per rally**,
 dispatched through `/cross-provider-agent` under the `github-pr-reviewer`
 profile with the absolute `checkout`. The coordinator invokes `/code-review`which spawns its two
 context-isolated native children (Standards, Spec) inside the profile's
@@ -108,9 +108,8 @@ authority. On top of that, each coordinator's prompt includes:
   whose first line is `<model> / rally <n> / <head OID>`.
 - path to local checkout/worktree
 
-Before every reviewer dispatch, apply the repository's data-sharing restrictions
-below, including to explicit overrides. Explain any excluded reviewers and their
-replacements. Then record the current PR comment IDs using
+Before every reviewer dispatch, apply the data-sharing restrictions under
+review agent defaults below. Then record the current PR comment IDs using
 `gh api repos/{owner}/{repo}/issues/N/comments --paginate`. After its run,
 read the comments again. Count the review as complete only if a new comment
 ID identifies a comment whose body first line exactly matches that reviewer's
@@ -122,6 +121,14 @@ after snapshot. Do not count a failed review toward Pass.
 Wrap every reviewer dispatch in `timeout` (45 minutes is ample). Reviewer CLIs
 can hang without output, and a timed-out review is a failed review.
 
+Recover a failed reviewer slot without stopping the PR process. Allow at most
+two recovery attempts per failed slot per rally: correct its dispatch or
+publication and retry, or choose a permitted replacement consistent with explicit
+model choices. Use fresh sessions for redispatched reviews and retain other
+verified reviews on the same pinned head. If recovery fails, report that slot
+as unresolved and continue the remaining reviews and adjudication. An unresolved
+slot prevents Pass.
+
 
 * note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
 clean-tree verification. When using it run reviewers sequentially, or pin one checkout per
@@ -132,25 +139,20 @@ reviewer.
 Run the two default adversarial reviewers and every permitted free reviewer on
 each rally.
 
-Muse Spark 1.3 Contributor Free and MiMo-V2.6-Flash Free share submitted data.
-Where repository policy prohibits Muse's Contributor tier, also prohibit MiMo
-Free. Apply this restriction before selecting the default pair, bonus roster,
-or explicit reviewer overrides; an override does not bypass it. MiMo Free's
-collected data may be used to improve the model; see
-[OpenCode Zen privacy](https://opencode.ai/docs/zen/#privacy).
+MiMo-V2.6-Flash Free collects data that may be used to improve the model; see
+[OpenCode Zen privacy](https://opencode.ai/docs/zen/#privacy). Wherever repository
+policy prohibits Muse's Contributor tier, also prohibit MiMo Free, including
+explicit reviewer overrides. Replace only prohibited default-pair seats with
+permitted reviewers from another provider than the implementer when available,
+and keep the permitted seats. Omit prohibited bonus reviewers. Choose replacements
+consistent with explicit model choices; if none are permitted, report the slot
+as unresolved. Explain exclusions and replacements before dispatch.
 
 | Implementer model provider | Default reviewer 1 | Default reviewer 2 |
 |---|---|---|
 | OpenAI | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) | Cursor Grok 4.5 (`high`, standard speed) |
 | Cursor | GPT-6.1 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
 | Any other provider | GPT-6.1 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
-
-When Muse is prohibited, use GPT-6.1 Sol through Codex (`high`) and Cursor Grok
-4.5 (`high`, standard speed) as the default pair. Prefer a permitted reviewer
-from another provider over the implementer's provider when one is available.
-If the pair must include the implementer's provider, use a fresh session as
-required above. Exclude both Muse Contributor Free and MiMo Free from the bonus
-roster as well.
 
 | Free model | Transport | Effort |
 |---|---|---|
@@ -181,12 +183,13 @@ Where reviewers disagree, use your judgement
 
 Stop and report at the first of these:
 
-1. **Pass** — every reviewer published a verified comment and no meaningful
-   findings remain after adjudication.
-2. **Budget** — rally cap reached. Report the surviving findings.
-3. **Failure** — an implementer errors or cannot proceed, a reviewer fails to
-   publish its matching comment, or the branch stops building. Report the
-   state; do not burn rallies on a broken tree.
+1. **Pass** — every required reviewer slot has a verified comment and no
+   meaningful findings remain after adjudication.
+2. **Budget** — rally cap reached. Report the surviving findings and unresolved
+   reviewer slots.
+3. **Failure** — an implementer errors or cannot proceed, or the branch stops
+   building. Report the state; do not burn rallies on a broken tree. Reviewer
+   failures use the recovery procedure above and do not stop the PR process.
 
 ## Merge
 
