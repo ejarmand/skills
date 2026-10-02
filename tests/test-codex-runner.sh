@@ -104,10 +104,10 @@ esac
 # --- 2. runner-owned effort becomes a narrow Codex config override ----------
 rm -f "$TMP/record"
 run_runner --workspace "$WS" --profile github-pr-reviewer --effort xhigh \
-  -- --model gpt-5.6-luna "review task"
+  -- --model gpt-6-luna "review task"
 rc=$?
 [ "$rc" -eq 0 ] && pass "effort dispatch exits 0" || fail "effort dispatch exited $rc"
-[ "$(record args)" = "exec -c model_reasoning_effort=\"xhigh\" --sandbox read-only -C $WS --model gpt-5.6-luna review task" ] \
+[ "$(record args)" = "exec -c model_reasoning_effort=\"xhigh\" --sandbox read-only -C $WS --model gpt-6-luna review task" ] \
   && pass "validated effort becomes the exact Codex config override" \
   || fail "unexpected effort args: $(record args)"
 

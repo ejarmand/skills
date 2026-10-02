@@ -26,7 +26,7 @@ Issue each shell command on its own, not chained with `&&`, `;`, or `|`. Restric
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, etc.) — fetch per the work-record contract in [`../domain-modeling/WORK-RECORDS.md`](../domain-modeling/WORK-RECORDS.md).
+1. Issue references in the commit messages (`#123`, `Closes #45`, etc.) — fetch per the work-record contract in [`../wayfinder/WORK-RECORDS.md`](../wayfinder/WORK-RECORDS.md).
 2. A path the user passed as an argument.
 
 ### 3. Identify the standards sources
@@ -58,4 +58,3 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned, keeping each finding on its own axis — never merged, reranked, or resolved to a single winner across axes (see _Why two axes_).
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any).
-

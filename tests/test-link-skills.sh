@@ -64,6 +64,25 @@ fi
 
 echo "linked every skills/*/bin executable into the temporary bin directory"
 
+# Retired links owned by this checkout are pruned; other installs and real
+# directories remain the user's responsibility.
+ln -s "$REPO/skills/retired-skill" "$claude_dest/retired-skill"
+ln -s "$REPO/skills/retired-skill" "$agents_dest/renamed-retired-skill"
+ln -s "$REPO/skills/retired-skill/bin/retired-tool" "$bin_dest/retired-tool"
+ln -s "$test_root/other-repo/skills/retired-skill" "$claude_dest/other-install"
+mkdir "$agents_dest/retired-copy"
+CLAUDE_SKILLS_DIR="$claude_dest" AGENTS_SKILLS_DIR="$agents_dest" \
+  BIN_DIR="$bin_dest" "$REPO/scripts/link-skills.sh" >/dev/null </dev/null
+for target in "$claude_dest/retired-skill" "$agents_dest/renamed-retired-skill" "$bin_dest/retired-tool"; do
+  if [ -L "$target" ]; then
+    echo "error: retired repo-owned link survived: $target" >&2
+    exit 1
+  fi
+done
+test -L "$claude_dest/other-install"
+test -d "$agents_dest/retired-copy"
+echo "pruned retired repo-owned links while preserving unrelated installs and real directories"
+
 # Conflict handling: a real directory colliding with a skill name must be
 # detected, refused without confirmation, and deleted only with --yes.
 conflict_claude="$test_root/conflict-claude"
@@ -71,6 +90,7 @@ conflict_agents="$test_root/conflict-agents"
 conflict_name="$(basename "$(dirname "$(find "$REPO/skills" -mindepth 2 -maxdepth 2 -name SKILL.md | sort | head -n 1)")")"
 mkdir -p "$conflict_claude/$conflict_name"
 touch "$conflict_claude/$conflict_name/sentinel"
+ln -s "$REPO/skills/retired-skill" "$conflict_claude/retired-skill"
 
 if CLAUDE_SKILLS_DIR="$conflict_claude" AGENTS_SKILLS_DIR="$conflict_agents" \
   BIN_DIR="$test_root/conflict-bin" \
@@ -83,6 +103,10 @@ if [ ! -f "$conflict_claude/$conflict_name/sentinel" ]; then
   echo "error: refused run still removed the conflicting path." >&2
   exit 1
 fi
+if [ ! -L "$conflict_claude/retired-skill" ]; then
+  echo "error: refused run still pruned a retired link." >&2
+  exit 1
+fi
 
 if [ -e "$conflict_agents/$conflict_name" ]; then
   echo "error: refused run still linked skills into another destination." >&2
@@ -92,6 +116,7 @@ fi
 CLAUDE_SKILLS_DIR="$conflict_claude" AGENTS_SKILLS_DIR="$conflict_agents" \
   BIN_DIR="$test_root/conflict-bin" \
   "$REPO/scripts/link-skills.sh" --yes >/dev/null </dev/null
+test ! -L "$conflict_claude/retired-skill"
 
 if [ ! -L "$conflict_claude/$conflict_name" ]; then
   echo "error: --yes run did not replace the conflicting path with a symlink." >&2
