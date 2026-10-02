@@ -121,13 +121,12 @@ after snapshot. Do not count a failed review toward Pass.
 Wrap every reviewer dispatch in `timeout` (45 minutes is ample). Reviewer CLIs
 can hang without output, and a timed-out review is a failed review.
 
-Recover a failed reviewer slot without stopping the PR process. Allow at most
-two recovery attempts per failed slot per rally: correct its dispatch or
+A failed review blocks only that reviewer slot. Correct its dispatch or
 publication and retry, or choose a permitted replacement consistent with explicit
 model choices. Use fresh sessions for redispatched reviews and retain other
-verified reviews on the same pinned head. If recovery fails, report that slot
-as unresolved and continue the remaining reviews and adjudication. An unresolved
-slot prevents Pass.
+verified reviews on the same pinned head. Continue the remaining reviews and
+adjudication. Stop retrying a slot only when no corrective action or permitted
+replacement remains, and report it as unresolved.
 
 
 * note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
