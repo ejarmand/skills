@@ -6,8 +6,8 @@ set -euo pipefail
 #   - ~/.claude/skills  — Claude Code
 #   - ~/.agents/skills  — Codex and other Agent Skills-compatible harnesses
 #   - ~/.local/bin      — skill CLIs such as agent-resume
-# Each entry is a symlink into this repo, so a `git pull` is all that's needed
-# to keep installed skills up to date.
+# Each entry is a symlink into this repo, so `git pull` updates its contents.
+# Rerun this script to link new skills and prune dangling repo-owned links.
 #
 # Existing non-symlink paths that collide with link names (for example, real
 # directory copies from an earlier install method) are detected upfront, listed,
@@ -108,6 +108,22 @@ if [ "${#conflicts[@]}" -gt 0 ]; then
   fi
   rm -rf -- "${conflicts[@]}"
 fi
+
+# Remove dangling links into this checkout's skills tree after all conflict
+# checks. Never remove a real path or a link owned by another checkout.
+for DEST in "${SKILL_DESTS[@]}" "$BIN_DIR"; do
+  for target in "$DEST"/*; do
+    if [ -L "$target" ] && [ ! -e "$target" ]; then
+      source="$(readlink -m "$target")"
+      case "$source" in
+        "$REPO"/skills/*)
+          rm -- "$target"
+          echo "removed retired link $target"
+          ;;
+      esac
+    fi
+  done
+done
 
 for i in "${!targets[@]}"; do
   target="${targets[$i]}"

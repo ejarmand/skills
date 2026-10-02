@@ -2,7 +2,6 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-router="$REPO/skills/skill-router/SKILL.md"
 readme="$REPO/README.md"
 
 declare -A declared_names=()
@@ -34,12 +33,6 @@ for skill_dir in "$REPO"/skills/*; do
     exit 1
   fi
 
-  if [ "$dir_name" != skill-router ] &&
-    ! grep -Fq "\`/$dir_name\`" "$router"; then
-    echo "error: skill router omits '$dir_name'." >&2
-    exit 1
-  fi
-
   skill_yaml="$skill_dir/agents/openai.yaml"
   dmi=0
   if grep -q '^disable-model-invocation: true' "$skill_md"; then dmi=1; fi
@@ -53,7 +46,7 @@ for skill_dir in "$REPO"/skills/*; do
   count=$((count + 1))
 done
 
-if grep -En 'ask-matt|cursor-code-review|pr-pping-pong' "$router" "$readme"; then
+if grep -En 'ask-matt|cursor-code-review|pr-pping-pong' "$readme"; then
   echo "error: stale skill name found in public inventory." >&2
   exit 1
 fi
@@ -67,4 +60,4 @@ if find "$REPO" -path "$REPO/.claude-plugin" -prune -o \
   exit 1
 fi
 
-echo "validated $count canonical skills across filesystem, frontmatter, router, and README"
+echo "validated $count canonical skills across filesystem, frontmatter, and README"
