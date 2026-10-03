@@ -129,9 +129,20 @@ adjudication. Stop retrying a slot only when no corrective action or permitted
 replacement remains, and report it as unresolved.
 
 
-* note * Cursor's review dispatch has a its runner stages a workspace config that trips another dispatch's
-clean-tree verification. When using it run reviewers sequentially, or pin one checkout per
-reviewer.
+Run distinct models other than Cursor in parallel; duplicate entries of one
+model stay sequential, as above. The Cursor runner stages `.cursor/` files and
+a lock directory in its workspace until it exits, so another reviewer's
+clean-tree check in that workspace would fail. With one shared `checkout`,
+give Cursor its own phase: start the other reviewers together and wait for all
+of them, then run Cursor, or run Cursor first and start the others once its
+runner has exited and `git status --porcelain` in the checkout is empty; a
+non-zero exit other than 70 is a failed Cursor review slot, handled by the
+recovery rule above, not a reason to hold the others. Exit 70 means the
+runner could not clean up, roll back, or recover and left
+`.cursor-profile-txn/` behind; don't start other reviewers in that checkout.
+To run every reviewer at once, point Cursor at its
+own detached worktree at the pinned head and remove it after the review. Two
+Cursor reviewers never share a workspace; the runner's lock rejects the second.
 
 #### review agent defaults
 
