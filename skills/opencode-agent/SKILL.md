@@ -60,8 +60,9 @@ outside; `gh` needs no `--repo`.
 
 A profiled run should succeed without a failed tool, so write the prompt for
 the profile's allowlist. Tell the agent to run git from the workspace without
-`git -C`, which matches no allow entry. Have it read issues and PRs with
-`gh issue view N --json title,body,comments`: without a terminal, `--comments`
+`git -C`, which matches no allow entry. Have it read issues with
+`gh issue view N --json title,body,comments` and PRs with
+`gh pr view N --json title,body,comments`: without a terminal, `--comments`
 prints only the comments, so an issue with none reads as empty.
 
 OpenCode prints nothing while it waits on a provider, so the runner bounds
