@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send a message to a Claude Code or Codex session when a timer or command finishes.
+"""Send a message to a Claude Code or Codex session when a timer, command, or process finishes.
 
 Each trigger is a `systemd-run --user` transient unit, so it outlives the
 agent's turn and its process, and logout too if lingering is on (`loginctl
@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import select
 import shlex
 import socket
 import subprocess
@@ -42,6 +43,38 @@ CODEX_BUSY = "already has an active writer"
 CODEX_SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
 
 
+def start_time(pid):
+    """Field 22 of /proc/<pid>/stat, the process's start time; it tells a recycled PID apart."""
+    stat = Path(f"/proc/{pid}/stat").read_text()
+    return stat[stat.rindex(")") + 2:].split(" ")[19]
+
+
+def wait_for_exit(pid, start):
+    """Block until the process with this PID and start time is gone.
+
+    A pidfd refers to one process, so a PID recycled while waiting cannot fool
+    the poll; a PID recycled before the pidfd opened shows up as a new start time.
+    """
+    try:
+        pidfd = os.pidfd_open(pid)
+    except ProcessLookupError:
+        return
+    try:
+        try:
+            now = start_time(pid)
+        except FileNotFoundError:
+            return  # exited and reaped since the pidfd opened
+        if now != start:
+            print(f"agent-resume: PID {pid} now belongs to another process (start time {now}, "
+                  f"recorded {start}); the watched process already ended", file=sys.stderr, flush=True)
+            return
+        poller = select.poll()
+        poller.register(pidfd, select.POLLIN)
+        poller.poll()
+    finally:
+        os.close(pidfd)
+
+
 def claude_live_sockets(session):
     """(socket path, peer token or None) for each live process registered for the session.
 
@@ -61,13 +94,13 @@ def claude_live_sockets(session):
         if not isinstance(sock, str) or not sock or type(pid) is not int:
             continue
         try:
-            stat = Path(f"/proc/{pid}/stat").read_text()
+            now = start_time(pid)
         except OSError:
             continue  # no such process
-        # procStart is field 22 of /proc/<pid>/stat when the entry was written;
-        # Claude Code reads a mismatch as a recycled PID, and so does this.
+        # procStart is the start time when the entry was written; Claude Code
+        # reads a mismatch as a recycled PID, and so does this.
         start = info.get("procStart")
-        if isinstance(start, str) and stat[stat.rindex(")") + 2:].split(" ")[19] != start:
+        if isinstance(start, str) and now != start:
             continue
         key = entry.parent / f"{pid}.{hashlib.sha256(sock.encode()).hexdigest()}.key"
         try:
@@ -230,9 +263,9 @@ def deliver_codex(session, message, env, dry_run):
 DELIVER = {"claude": deliver_claude, "codex": deliver_codex}
 
 
-def completion_message(message, command, status, tail, log):
+def completion_message(message, subject, status, tail, log):
     return (f"{message}\n\n"
-            f"agent-resume: `{shlex.join(command)}` {status}.\n"
+            f"agent-resume: {subject} {status}.\n"
             f"Log: {log}\n"
             f"Last {TAIL_LINES} log lines:\n{tail}")
 
@@ -241,16 +274,26 @@ def schedule(args, command):
     session = args.session or os.environ.get(SESSION_ENV[args.action])
     if not session:
         sys.exit(f"agent-resume: no session ID given and {SESSION_ENV[args.action]} is not set")
-    if bool(args.time) == bool(command):
-        sys.exit("agent-resume: give exactly one of --time or a command after --")
+    if [bool(args.time), bool(command), args.pid is not None].count(True) != 1:
+        sys.exit("agent-resume: give exactly one of --time, --pid, or a command after --")
+    if (args.pid is None) != (args.log is None):
+        sys.exit("agent-resume: --pid and --log go together")
+    start = log = None
+    if args.pid is not None:
+        try:
+            start = start_time(args.pid)
+        except OSError:
+            sys.exit(f"agent-resume: no process {args.pid}")
+        log = os.path.abspath(args.log)
     unit = f"agent-resume-{secrets.token_hex(4)}"
-    log = STATE / f"{unit}.log"
+    unit_log = STATE / f"{unit}.log"
     cwd = os.getcwd()
     run = ["systemd-run", "--user", f"--unit={unit}",
            f"--description=agent-resume {args.action} {session}", "--collect", "--quiet",
            # No --working-directory: systemd will not start a unit whose directory
            # is gone, losing the message. fire() runs the command in cwd instead.
-           f"--property=StandardOutput=append:{log}", f"--property=StandardError=append:{log}"]
+           f"--property=StandardOutput=append:{unit_log}",
+           f"--property=StandardError=append:{unit_log}"]
     if args.time:
         run.append(f"--on-active={args.time}")
     run += ["--", sys.executable, os.path.realpath(__file__), "_fire", unit]
@@ -266,14 +309,21 @@ def schedule(args, command):
                   "(scripts/link-skills.sh offers to set it)", file=sys.stderr)
     if args.dry_run:
         print(shlex.join(run))
-        message = args.message if args.time else completion_message(
-            args.message, command, "exited with status <status>", "<log tail>", log)
+        if args.time:
+            message = args.message
+        elif command:
+            message = completion_message(args.message, f"`{shlex.join(command)}`",
+                                         "exited with status <status>", "<log tail>", unit_log)
+        else:
+            message = completion_message(args.message, f"process {args.pid}",
+                                         "<ended | exited with status N>", "<log tail>", log)
         return DELIVER[args.action](session, message, os.environ, dry_run=True)
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     spec = STATE / f"{unit}.json"
     with open(os.open(spec, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as out:
         json.dump({"provider": args.action, "session": session, "message": args.message,
                    "time": args.time, "command": command, "cwd": cwd,
+                   "pid": args.pid, "start": start, "log": log,
                    "created": datetime.datetime.now().isoformat(timespec="seconds"),
                    "env": dict(os.environ)}, out)
     try:
@@ -290,24 +340,38 @@ def fire(unit):
     spec = json.loads(spec_path.read_text())
     message = spec["message"]
     try:
-        if spec["command"]:
-            log = STATE / f"{unit}.log"
+        if spec["command"] or spec.get("pid"):
+            if spec["command"]:
+                subject, log = f"`{shlex.join(spec['command'])}`", STATE / f"{unit}.log"
+                try:
+                    code = subprocess.run(spec["command"], cwd=spec["cwd"], env=spec["env"]).returncode
+                    status = f"exited with status {code}" if code >= 0 else f"was killed by signal {-code}"
+                except OSError as error:
+                    print(f"agent-resume: {error}", file=sys.stderr, flush=True)
+                    status = "could not start"
+                sys.stdout.flush()
+            else:
+                subject, log = f"process {spec['pid']}", spec["log"]
+                wait_for_exit(spec["pid"], spec["start"])
+                status = "ended"
             try:
-                code = subprocess.run(spec["command"], cwd=spec["cwd"], env=spec["env"]).returncode
-                status = f"exited with status {code}" if code >= 0 else f"was killed by signal {-code}"
+                with open(log, errors="replace") as lines:
+                    last = collections.deque(lines, TAIL_LINES)
             except OSError as error:
-                print(f"agent-resume: {error}", file=sys.stderr, flush=True)
-                status = "could not start"
-            sys.stdout.flush()
-            with open(log, errors="replace") as lines:
-                # An argument cannot hold a NUL byte either.
-                tail = "".join(collections.deque(lines, TAIL_LINES)).replace("\0", "\ufffd")
+                last = [f"(log unreadable: {error})\n"]
+            # A process that is not our child has no readable exit status; a
+            # launch like `cmd; echo exit=$? >> log` leaves one as the last line.
+            exit_line = re.fullmatch(r"exit=(\d+)", last[-1].strip()) if last else None
+            if not spec["command"] and exit_line:
+                status = f"exited with status {exit_line[1]} (from its log's last line)"
+            # An argument cannot hold a NUL byte either.
+            tail = "".join(last).replace("\0", "\ufffd")
             # Keep as much of the tail's end as fits; a character cut in half is dropped.
             # os.fsencode encodes the message the way subprocess will.
             room = MESSAGE_BYTES - len(os.fsencode(
-                completion_message(message, spec["command"], status, "", log)))
+                completion_message(message, subject, status, "", log)))
             tail = os.fsencode(tail)[-room:].decode(errors="ignore") if room > 0 else ""
-            message = completion_message(message, spec["command"], status, tail, log)
+            message = completion_message(message, subject, status, tail, log)
         env = {k: v for k, v in spec["env"].items() if k not in SESSION_VARS}
         code = DELIVER[spec["provider"]](spec["session"], message, env, dry_run=False)
         error = f"exit status {code}"
@@ -335,7 +399,9 @@ def list_triggers():
         spec = json.loads(spec_path.read_text())
         state = ("running" if f"{unit}.service" in active else
                  "waiting" if f"{unit}.timer" in active else "gone")
-        trigger = f"after {spec['time']}" if spec["time"] else f"on exit of {shlex.join(spec['command'])}"
+        trigger = (f"after {spec['time']}" if spec["time"] else
+                   f"on exit of {shlex.join(spec['command'])}" if spec["command"] else
+                   f"on exit of process {spec['pid']}")
         print(f"{unit}\t{state}\t{spec['provider']} {spec['session']}\t"
               f"{trigger} (from {spec['created']})\t{spec['message']}")
     return 0
@@ -363,6 +429,7 @@ def main(argv):
         epilog="examples:\n"
                "  agent-resume codex --time 3h --message 'look at new PRs on the repo'\n"
                "  agent-resume claude --message 'address any errors' -- make test\n"
+               "  agent-resume claude --pid 4242 --log job.log --message 'job finished'\n"
                "  agent-resume list\n"
                "  agent-resume cancel agent-resume-1a2b3c4d")
     actions = parser.add_subparsers(dest="action", required=True,
@@ -371,6 +438,8 @@ def main(argv):
         sub = actions.add_parser(provider, help=f"message a {provider} session on a trigger")
         sub.add_argument("session", nargs="?", help=f"session ID (default: ${variable})")
         sub.add_argument("--time", help="systemd time span to wait, e.g. 3h or 90min")
+        sub.add_argument("--pid", type=int, help="fire when this running process exits")
+        sub.add_argument("--log", help="with --pid: the process's log, whose tail goes in the message")
         sub.add_argument("--message", required=True, help="message to send when the trigger fires")
         sub.add_argument("--dry-run", action="store_true",
                          help="print the systemd and delivery commands without running them")
