@@ -20,6 +20,8 @@ lists the complete collection.
 ### On-ramps and codebase health
 
 - `diagnosing-bugs` — establish a reproducer, diagnose, and regression-test
+- `research` — research docs or academic literature from primary sources and
+  save the findings to `./research`
 - `wayfinder` — map a multi-session effort as GitHub decision issues and
   resolve them one at a time
 - `codebase-design` — shared deep-module vocabulary
