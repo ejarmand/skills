@@ -1,13 +1,13 @@
 ---
 name: opencode-agent
-description: Run OpenCode CLI as an independent coding agent across its provider catalog, capture its session, or dispatch its profiled GitHub PR reviewer.
+description: CLI fallback for launching OpenCode workers or resuming existing OpenCode sessions. Use when harness delegation cannot run the requested task or the user requests CLI execution.
 ---
 
 # OpenCode Agent
 
-Run `opencode run` from the intended workspace with one selected
-`provider/model`. Read `/cross-provider-agent` first; backend choice and
-authority doctrine live there.
+For CLI fallback launches or existing CLI sessions, read
+`/cross-provider-agent` and run `opencode run` from the intended
+checkout with the selected `provider/model`.
 
 ## Check the transport
 
@@ -42,11 +42,13 @@ cd /absolute/path/to/workspace && \
 
 Capture `sessionID` from the first JSON event. Resume the same session with
 `--session SESSION_ID`; add `--fork` when follow-up work must branch from it.
-On completion require a successful process exit, no error event or failed tool,
-and a final `step_finish` whose reason is `stop`. The calling agent owns
-monitoring and termination.
+Check the process exit, final `step_finish` with reason `stop`, and the returned
+result. An unresolved error or incomplete task needs recovery; a failed tool
+call that the worker recovered from does not require repeating the work.
 
 ## Profiled dispatch
+
+Use this section when the task requests a named CLI authority profile.
 
 For running limited opencode sessions based on particular profiles use 
 

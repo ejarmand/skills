@@ -15,7 +15,7 @@ review.** Agents catch defects in code they did not write far more reliably than
 in their own. When the same provider implements and reviews, the reviewer runs in
 a separate session that never saw the implementation transcript.
 
-Invocation authorizes running the agent CLIs, committing, and pushing to the PR
+Invocation authorizes delegation, committing, and pushing to the PR
 branch. It does not authorize merging, force pushes, edits outside the change, or
 unrelated external actions.
 
@@ -35,7 +35,6 @@ Resolve from the request, then state the resolved set before starting.
 Honor explicit reviewer overrides. Never let a reviewer share the implementation
 session.
 
-
 ## Preflight
 
 Require authenticated `gh`. Resolve the target to a PR on a branch and set
@@ -50,63 +49,42 @@ to create or inspect worktrees.
 
 ## The rally
 
-One rally is one implementation pass, a push, all reviews, and adjudication. Run at
-most the budgeted number. The implementer keeps **one session across rallies** —
-resume it, never concurrently — so it carries its decisions forward. Reviewers
-get **fresh sessions every rally**.
+One rally is one implementation pass, a push, all reviews, and adjudication.
+Run at most the budgeted number. Continue the implementer when the harness
+supports it; otherwise give the replacement its earlier decisions and accepted
+findings. Reviewers get fresh contexts every rally.
+
+Use the harness's delegation tools, including Orchestrator V2, for supported
+providers, models, and workspaces. Follow the tools' own dispatch and lifecycle
+instructions. Use `/cross-provider-agent` and its CLI adapters only when a CLI
+launch or existing CLI session is needed.
 
 ### 1. Implement
 
-- **Native subagent (default):** dispatch one implementation worker through the
-  current harness's native agent interface. Record its agent/session ID and
-  resume that same worker on later rallies; if the harness cannot resume it,
-  start a replacement with the prior rallies' accepted findings and say so.
-- **Provider override:** dispatch through `/cross-provider-agent` with the least
-  write authority that permits the implementation, and resume that session on
-  later rallies.
+Dispatch one implementation worker using the resolved model and checkout.
 
 Give the implementer the absolute `checkout`, the objective, the permitted scope,
 the required verification, and — from rally 2 on — the accepted findings. Never
-let it push, merge, or spawn further agents. A missing successful terminal
-result is a failed rally.
+let it push, merge, or spawn further agents. Verify its result before review.
 
 ### 2. Push and pin
 
-Verify the work yourself first: inspect the diff, confirm the commits are scoped,
-run the repo's checks. Reviewing an unpushed or unverified state wastes a full
-rally. Push, then pin the exact base and head — the pinned head must be the
-`HEAD` you just pushed, so poll until the API reflects it:
-
-```bash
-local_head="$(git -C "$checkout" rev-parse HEAD)" || exit 1
-for attempt in 1 2 3 4 5; do
-  meta="$(gh pr view N --json baseRefName,baseRefOid,headRefOid \
-    --jq '[.baseRefName, .baseRefOid, .headRefOid] | @tsv')" || exit 1
-  read -r base_ref base_oid head_oid <<<"$meta"
-  test "$head_oid" = "$local_head" && break
-  test "$attempt" -lt 5 || exit 1
-  sleep 3
-done
-git -C "$checkout" fetch origin "$base_ref" || exit 1
-git -C "$checkout" cat-file -e "${base_oid}^{commit}" || exit 1
-```
-
-Stop if the block fails. Substitute the recorded OIDs into every reviewer
-prompt as `git diff BASE_OID...HEAD_OID`.
+Inspect the diff, confirm the commits are scoped, and run the repo's checks.
+Push, then record the PR's exact base and head OIDs. Confirm the head is the
+commit just pushed and that the checkout has both commits before dispatch.
+Use `git diff BASE_OID...HEAD_OID` in every reviewer prompt.
 
 ### 3. Review
 
-Each selected reviewer model runs **a fresh review coordinator per rally**,
-dispatched through `/cross-provider-agent` under the `github-pr-reviewer`
-profile with the absolute `checkout`. The coordinator invokes `/code-review`which spawns its two
-context-isolated native children (Standards, Spec) inside the profile's
-authority. On top of that, each coordinator's prompt includes:
+Each selected model runs a fresh review coordinator per rally. The coordinator
+invokes `/code-review` with two context-isolated children, Standards and Spec.
+Children return findings to the coordinator; the coordinator publishes one
+combined top-level PR comment headed `<model> / rally <n> / <head OID>`.
 
-- the tagged issue or PR as the spec source, fetched through the profile's
-  `gh` reads;
-- publication: aggregate both axis reports into one top-level PR comment
-  whose first line is `<model> / rally <n> / <head OID>`.
-- path to local checkout/worktree
+Give the coordinator the absolute checkout, pinned diff, and issue or PR spec,
+including its body and relevant decisions. Fetch issue text with
+`gh issue view N --json title,body,comments`; `--comments` alone can omit the body.
+Use a named authority profile when the task requests one.
 
 Before every reviewer dispatch, apply the data-sharing restrictions under
 review agent defaults below. Then record the current PR comment IDs using
@@ -118,31 +96,19 @@ comment is a failed review.
 Dispatch duplicate model entries sequentially so each has its own before and
 after snapshot. Do not count a failed review toward Pass.
 
-Wrap every reviewer dispatch in `timeout` (45 minutes is ample). Reviewer CLIs
-can hang without output, and a timed-out review is a failed review.
+A recovered tool error does not invalidate a completed review. If only
+publication failed, retry publication using the completed report. For an
+incomplete review, correct the dispatch or choose a permitted replacement,
+keeping other verified reviews on the same head. Continue the remaining work;
+report a slot as unresolved when recovery is exhausted.
 
-A failed review blocks only that reviewer slot. Correct its dispatch or
-publication and retry, or choose a permitted replacement consistent with explicit
-model choices. Use fresh sessions for redispatched reviews and retain other
-verified reviews on the same pinned head. Continue the remaining reviews and
-adjudication. Stop retrying a slot only when no corrective action or permitted
-replacement remains, and report it as unresolved.
+For CLI fallback reviews, bound the process with `timeout` (45 minutes is ample).
 
-
-Run distinct models other than Cursor in parallel; duplicate entries of one
-model stay sequential, as above. The Cursor runner stages `.cursor/` files and
-a lock directory in its workspace until it exits, so another reviewer's
-clean-tree check in that workspace would fail. With one shared `checkout`,
-give Cursor its own phase: start the other reviewers together and wait for all
-of them, then run Cursor, or run Cursor first and start the others once its
-runner has exited and `git status --porcelain` in the checkout is empty; a
-non-zero exit other than 70 is a failed Cursor review slot, handled by the
-recovery rule above, not a reason to hold the others. Exit 70 means the
-runner could not clean up, roll back, or recover and left
-`.cursor-profile-txn/` behind; don't start other reviewers in that checkout.
-To run every reviewer at once, point Cursor at its
-own detached worktree at the pinned head and remove it after the review. Two
-Cursor reviewers never share a workspace; the runner's lock rejects the second.
+When using the profiled Cursor CLI runner, give Cursor its own pinned checkout
+or run it separately from the other reviewers. Its temporary `.cursor/` files
+can fail another reviewer's clean-tree check, and two Cursor runners cannot
+share a checkout. If cleanup fails with exit 70, recover that checkout before
+reusing it; other reviewer slots can proceed in their own checkouts.
 
 #### review agent defaults
 
@@ -164,7 +130,7 @@ as unresolved. Explain exclusions and replacements before dispatch.
 | Cursor | GPT-6.1 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
 | Any other provider | GPT-6.1 Sol through Codex (`high`) | Muse Spark 1.3 Contributor Free through OpenCode Zen (`high`) |
 
-| Free model | Transport | Effort |
+| Free model | Provider route | Effort |
 |---|---|---|
 | GPT-6 Luna | Codex | `high` |
 | Muse Spark 1.3 Contributor Free | OpenCode Zen | `high` |
@@ -173,9 +139,9 @@ as unresolved. Explain exclusions and replacements before dispatch.
 Permitted free reviewers should be used even if they duplicate the implementer,
 just use a fresh context.
 
-Use subscription-backed native CLIs for OpenAI, Anthropic, and Cursor models.
-Use OpenCode Zen for Muse and MiMo. Pass `--variant high` to its profiled runner
-for Muse; MiMo uses model-default effort and does not support a `high` variant.
+Preserve subscription-backed provider routes for OpenAI, Anthropic, and Cursor,
+and OpenCode Zen for Muse and MiMo. For OpenCode CLI fallback, Muse uses
+`--variant high`; MiMo uses model-default effort without a `high` variant.
 Do not select Fable or Opus unless the user asks for them directly.
 
 ### 4. Adjudicate findings
@@ -197,9 +163,8 @@ Stop and report at the first of these:
    meaningful findings remain after adjudication.
 2. **Budget** — rally cap reached. Report the surviving findings and unresolved
    reviewer slots.
-3. **Failure** — an implementer errors or cannot proceed, or the branch stops
-   building. Report the state; do not burn rallies on a broken tree. Reviewer
-   failures use the recovery procedure above and do not stop the PR process.
+3. **Blocked** — required implementation, checks, or reviews cannot be completed
+   after recovery. Report what remains unresolved.
 
 ## Merge
 

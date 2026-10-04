@@ -1,16 +1,13 @@
 ---
 name: codex-agent
-description: Run Codex CLI as an independent coding worker for implementation, investigation, planning, or review, then monitor and verify its result. Use when asked to delegate work through `codex exec`, capture a Codex session ID for follow-up work, or resume, continue, consult, or "adopt" a prior Codex session or thread ID.
+description: CLI fallback for launching Codex workers or resuming existing Codex CLI sessions. Use when harness delegation cannot run the requested task or the user requests CLI execution.
 ---
 
 # Codex Agent
 
-Run `codex exec` from the intended workspace, give it a bounded outcome, monitor
-it at the task's time scale, and preserve its session ID when follow-up work is
-likely.
-
-Read `/cross-provider-agent` first and apply its doctrine to the whole
-dispatch; this skill is only the Codex transport.
+For CLI fallback launches or existing CLI sessions, read
+`/cross-provider-agent` and run `codex exec` from the intended
+checkout. Preserve the session ID for follow-up work.
 
 Treat installed help as authoritative because Codex CLI evolves:
 
@@ -23,13 +20,6 @@ codex login status
 
 If authentication is missing, ask the user to run `codex login`. Never display,
 copy, or embed authentication files or tokens.
-
-## agent permissions
-
-Use the least authority that completes the task. Never add
-`--dangerously-bypass-approvals-and-sandbox`, `danger-full-access`,
-`--ignore-rules`, or `--dangerously-bypass-hook-trust` merely to make a run
-unattended.
 
 ## Start a worker
 
@@ -72,12 +62,15 @@ Put global `codex exec` options before `resume`.
 
 ## Monitor and collect
 
-With `--json`, require a successful process exit and a terminal
-`turn.completed` event. Treat `turn.failed`, `error`, a nonzero exit, or a
-mismatched thread ID as failure. The final `item.completed` whose item type is
-`agent_message` contains the worker's result.
+With `--json`, check the process exit and terminal `turn.completed` event for
+the recorded thread. The final `item.completed` whose item type is
+`agent_message` contains the result. Recover unresolved failures; assess the
+completed task rather than rejecting it for an earlier recovered error.
 
 ## Profiled dispatch
+
+Use this section when the task requests a named CLI authority profile.
+
 `codex exec` hardcodes never-ask approvals: a sandboxed command that needs
 network fails (on Linux, a bubblewrap loopback error) with no runtime
 escalation path. Pre-authorize the specific commands with execpolicy rules 

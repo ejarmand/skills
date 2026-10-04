@@ -1,4 +1,4 @@
 interface:
   display_name: "Batch Subagents"
-  short_description: "Fan out Codex/Luna workers in one shell call"
-  default_prompt: "Use $batch-subagents to fan out these independent tasks through one bounded shell pool."
+  short_description: "Run independent agent tasks in a labeled batch"
+  default_prompt: "Use $batch-subagents to run these independent tasks through available harness delegation, with CLI workers as a fallback."
