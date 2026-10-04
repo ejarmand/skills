@@ -1,42 +1,38 @@
 ---
 name: cross-provider-agent
-description: Dispatch a bounded task to a Claude, Codex, Cursor, or OpenCode CLI agent with least authority. Use for independent reviews, named authority profiles, or external-provider subagents.
+description: Launch independent provider CLI workers when harness delegation cannot run the requested task, or resume an existing CLI session.
 ---
 
-# Cross-Provider Agent
-Use a subagent through a cli. Per cli invocations are under skills:
+# Cross-provider CLI fallback
 
- `/claude-agent`
- `/codex-agent`
- `/cursor-agent`
- `/opencode-agent`
+For ordinary delegation, use the harness's tools, including Orchestrator V2,
+when they support the requested provider, model, and workspace. Follow those
+tools' own dispatch and lifecycle instructions. These skills cover CLI launches and CLI-session
+continuation:
 
-## Choosing harness/model provider
+- `/claude-agent`
+- `/codex-agent`
+- `/cursor-agent`
+- `/opencode-agent`
 
- 1. For models with a particular provider plan, always use their native harness and subsidized plan
-    - e.g. codex - gpt models, claude code - anthropic models, cursor - grok models
- 2. Deffering to 1 or user instructions, prefer spwaning subagents using the harnesses own subagent tool
- 3. When independence matters (e.g. reviewing or judging work) exclude the
-   model provider that produced the work.
+Preserve the requested model, effort, provider route, and subscription preference.
+Use subscription-backed Claude Code, Codex, and Cursor for their models, and
+OpenCode Zen for its models, unless the user chooses another route.
 
-## Authority profiles
+Give the worker its task, absolute checkout path, relevant context, and expected
+result. For an independent review, use a fresh context separate from implementation.
+Verify the result against the task; a recovered tool error does not invalidate
+completed work.
 
-Profiles are provider-neutral authority contracts applied by adapters to one
-fresh child. Adapter encodings live under `profiles/<name>/` beside each
-adapter's SKILL.md.
+## Named authority profiles
 
-### Profile index
+When the task requests a named profile, use an adapter that enforces it.
+[`github-pr-reviewer`](profiles/github-pr-reviewer.md) is the strict CLI review
+profile; adapter encodings live under `profiles/<name>/`. A runtime mode alone
+does not enforce its command and network allowlists.
 
-- [`github-pr-reviewer`](profiles/github-pr-reviewer.md) — read and enforce
-  before choosing an adapter.
+## CLI transport failures
 
-## Workspace ownership
-
-Require an absolute path to a caller-prepared workspace. The caller owns
-checkout creation, pinning, verification, and deletion.
-
-## Distinguish network denial from authentication failure
-
-Transport errors (`dial`, `lookup`, `connect`, loopback failures) indicate
+Transport errors (`dial`, `lookup`, `connect`, loopback failures) can indicate
 sandboxed network access; an HTTP 401 "Bad credentials" response indicates
-authentication failure.
+authentication failure. Correct the dispatch within the task's permissions.

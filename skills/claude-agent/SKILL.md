@@ -1,16 +1,13 @@
 ---
 name: claude-agent
-description: Run Claude Code CLI headless as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to a separate Claude session, capture a Claude session ID, or resume and continue an earlier headless Claude run.
+description: CLI fallback for launching headless Claude Code workers or resuming existing Claude CLI sessions. Use when harness delegation cannot run the requested task or the user requests CLI execution.
 ---
 
 # Claude Agent
 
-Run `claude -p` from the intended workspace, give it a bounded outcome,
-monitor it at the task's time scale, and preserve its session ID when
-follow-up work is likely.
-
-Read `/cross-provider-agent` first and apply its doctrine to the whole
-dispatch; this skill is only the Claude transport.
+For CLI fallback launches or existing CLI sessions, read
+`/cross-provider-agent` and run `claude -p` from the intended
+checkout. Preserve the session ID for follow-up work.
 
 ## Check the CLI and authentication
 
@@ -27,10 +24,8 @@ files or tokens.
 
 ## agent permissions
 
-Use the least authority that completes the task. Default analysis, planning,
-and review to `--permission-mode plan`; for authorized implementation drop it
-and grant the task's specific needs with `--allowedTools`. Never add
-`--dangerously-skip-permissions` merely to make a run unattended.
+For analysis and review, use `--permission-mode plan`. For implementation,
+use the task's authorized tools with `--allowedTools`.
 
 ## Start a worker
 
@@ -61,6 +56,8 @@ On completion require a zero exit status and `"is_error": false` in the
 result object; the `result` field contains the worker's response.
 
 ## Profiled dispatch
+
+Use this section when the task requests a named CLI authority profile.
 
 ```bash
 cd /absolute/path/to/workspace && claude -p --output-format json \

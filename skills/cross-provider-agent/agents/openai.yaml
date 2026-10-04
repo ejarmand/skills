@@ -1,4 +1,4 @@
 interface:
   display_name: "Cross-Provider Agent"
-  short_description: "Dispatch a bounded task to an external-provider agent"
-  default_prompt: "Use $cross-provider-agent to dispatch this task to an independent provider agent under least authority, then monitor and verify the result."
+  short_description: "CLI fallback for independent provider workers"
+  default_prompt: "Use $cross-provider-agent when harness delegation cannot run this task or an existing CLI session needs continuation."

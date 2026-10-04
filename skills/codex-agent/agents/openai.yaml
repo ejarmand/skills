@@ -1,4 +1,4 @@
 interface:
   display_name: "Codex Agent"
-  short_description: "Run and resume Codex CLI workers"
-  default_prompt: "Use $codex-agent to delegate this task through Codex CLI and preserve the session ID for follow-up work."
+  short_description: "Launch and resume Codex CLI fallback workers"
+  default_prompt: "Use $codex-agent for this CLI fallback task or existing CLI session, and preserve its session ID."

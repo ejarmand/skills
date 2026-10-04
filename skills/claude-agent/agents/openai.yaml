@@ -1,4 +1,4 @@
 interface:
   display_name: "Claude Agent"
-  short_description: "Run and resume headless Claude Code workers"
-  default_prompt: "Use $claude-agent to delegate this task through headless Claude Code and preserve the session ID for follow-up work."
+  short_description: "Launch and resume Claude Code CLI fallback workers"
+  default_prompt: "Use $claude-agent for this CLI fallback task or existing CLI session, and preserve its session ID."

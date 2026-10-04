@@ -14,13 +14,18 @@ Both axes run as **parallel sub-agents** so they don't pollute each other's cont
 
 ### 1. Pin the fixed point
 
-Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it.
+Use the requested fixed point, or the PR's base when reviewing a PR. Ask only
+when the intended comparison is unclear.
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
-Before going further, confirm the fixed point resolves and the diff is non-empty. If the caller supplied pinned OIDs, use them as the fixed point and `HEAD`. Otherwise `git show --no-patch --format=fuller <fixed-point>` confirms the ref. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
+Use the caller's pinned base and head OIDs when supplied. Otherwise resolve the
+fixed point before dispatching children. An empty diff needs only a no-changes
+report.
 
-Issue each shell command on its own, not chained with `&&`, `;`, or `|`. Every review profile allows `git diff`, `git log`, `git show`, and `git status`; some also allow a few other read-only git subcommands, but chained commands can be denied.
+For named CLI review profiles, issue shell commands separately; chained commands
+can be denied. Those profiles allow `git diff`, `git log`, `git show`, and
+`git status`.
 
 ### 2. Identify the spec source
 
@@ -37,7 +42,8 @@ On top of whatever the repo documents, the Standards axis always carries the **u
 
 ### 4. Spawn both sub-agents in parallel
 
-Send a single message with two subagents.
+Use the harness's delegation tools to run both axes in separate contexts.
+Children return their reports to this coordinator.
 
 **Standards sub-agent prompt** — include:
 
@@ -55,6 +61,8 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 
 ### 5. Aggregate
 
-Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned, keeping each finding on its own axis — never merged, reranked, or resolved to a single winner across axes (see _Why two axes_).
+Combine the reports under `## Standards` and `## Spec`, keeping each finding on
+its axis. When PR publication is requested, the coordinator posts one combined
+comment; children only return findings.
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any).

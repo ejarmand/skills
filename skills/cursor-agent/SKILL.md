@@ -1,13 +1,13 @@
 ---
 name: cursor-agent
-description: Run Cursor Agent CLI as an independent coding agent for implementation, investigation, planning, or review in a local workspace. Use when asked to delegate work to Cursor, automate cursor-agent in headless mode, capture a Cursor session ID, or resume and continue an earlier Cursor chat.
+description: CLI fallback for launching Cursor Agent workers or resuming existing Cursor chats. Use when harness delegation cannot run the requested task or the user requests CLI execution.
 ---
 
 # Cursor Agent
 
-Run `cursor-agent` from the intended workspace, give it a concrete outcome, monitor it at the task's time scale, and preserve its session ID whenever follow-up work is likely.
-
-Read `/cross-provider-agent` first and apply its doctrine to the whole dispatch; this skill is only the Cursor transport.
+For CLI fallback launches or existing CLI sessions, read
+`/cross-provider-agent` and run `cursor-agent` from the intended
+checkout. Preserve the session ID for follow-up work.
 
 ## Check the CLI and authentication
 
@@ -57,12 +57,12 @@ Resume with `--resume="$cursor_chat_id"` from the same workspace used to create 
 
 ## Monitor and verify
 
-Poll the NDJSON log often enough to surface approval prompts promptly. On completion require
-a clean exit and a successful terminal result event.
-
-A `cursor-agent` or `gh` failure with transport errors naming the URL is the sandbox denying network, not bad credentials; rerun with the environment's required network escalation.
+Read NDJSON progress and check the process exit and terminal result against the
+task. Recover unresolved failures within the task's permissions.
 
 ## Profiled dispatch
+
+Use this section when the task requests a named CLI authority profile.
 
 Cursor takes permission and sandbox policy only from configuration files, so 
 profiled dispatch runs through the skill's transactional runner:
