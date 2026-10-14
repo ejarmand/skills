@@ -120,6 +120,13 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 [ "$(config_arg | jq -c '.provider')" = '{"openrouter":{"options":{"headerTimeout":120000,"chunkTimeout":120000}}}' ] \
   && pass "selected provider gets default header and chunk timeouts" \
   || fail "default provider timeouts: $(config_arg | jq -c '.provider')"
+[ "$(config_arg | jq -c '.plugins')" = '[{"package":"/skills/opencode-agent/plugins/decline-long-retry","options":{"graceMs":60000}}]' ] \
+  && [ -f "$REPO/skills/opencode-agent/plugins/decline-long-retry/server.js" ] \
+  && pass "runner loads its retry plugin with the default grace" \
+  || fail "retry plugin config: $(config_arg | jq -c '.plugins')"
+# OpenCode 2 reads the canonical name first, so an inherited 0 would win.
+awk 'previous == "--setenv" && $0 == "OPENCODE_CONFIG_PROJECT_DISABLE" { getline; if ($0 == "1") found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
+  && pass "runner disables project config under its canonical name" || fail "canonical project-config switch missing"
 
 # OpenCode reads a non-terminal stdin to its end before creating a session.
 mkfifo "$TMP/stdin.fifo" && exec 3<> "$TMP/stdin.fifo" || exit 1
@@ -290,6 +297,25 @@ rc=0
 FAKE_BWRAP_EXIT=7 run_runner --workspace "$WS" --profile github-pr-reviewer \
   --model openrouter/example-model -- "review issue 18" || rc=$?
 [ "$rc" -eq 7 ] && pass "bubblewrap child exit propagates" || fail "child exit became $rc"
+
+# A failed run whose last error is a rate limit or overload exits 76; another
+# error keeps OpenCode's exit.
+limited='{"type":"error","timestamp":1,"sessionID":"ses_1","error":{"type":"unknown","message":"Rate limit exceeded","status":429}}'
+rc=0
+err="$(FAKE_BWRAP_EVENT="$limited" FAKE_BWRAP_EXIT=1 run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model --rate-limit-grace 30 -- "task" 2>&1 >/dev/null)" || rc=$?
+[ "$rc" -eq 76 ] && grep -Fq 'Rate limit exceeded' <<< "$err" \
+  && pass "rate-limited run exits 76 and shows the provider error" || fail "rate-limited run: rc=$rc: $err"
+[ "$(config_arg | jq '.plugins[0].options.graceMs')" = 30000 ] \
+  && pass "rate-limit grace reaches the plugin" || fail "grace: $(config_arg | jq -c '.plugins')"
+rc=0
+FAKE_BWRAP_EVENT="${limited/429/500}" FAKE_BWRAP_EXIT=1 run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && pass "other provider errors keep OpenCode's exit" || fail "server error: rc=$rc"
+rc=0
+FAKE_BWRAP_EVENT="$limited" run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 0 ] && pass "a successful run with an earlier rate-limit error stays successful" || fail "recovered run: rc=$rc"
 state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "failed dispatch state is removed" || fail "failed dispatch left state: $state_root"

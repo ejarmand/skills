@@ -7,7 +7,8 @@
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME \
 #   --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] \
-#   [--provider-timeout SECONDS] [--idle-timeout SECONDS] -- "PROMPT"
+#   [--provider-timeout SECONDS] [--rate-limit-grace SECONDS] \
+#   [--idle-timeout SECONDS] -- "PROMPT"
 #
 # --agent selects the profile's primary agent (default: reviewer).
 # --variant passes a provider-specific reasoning setting through unchanged, as
@@ -15,10 +16,12 @@
 # --provider-timeout bounds the wait for a provider's response headers and
 # between stream chunks (default 120; OpenCode's own default is 300 per
 # attempt, retried about nine times, with no output). Profile values win.
+# --rate-limit-grace is the longest retry-after OpenCode may wait out after a
+# provider rate limit or overload (default 60). The runner's plugin declines a
+# longer wait, so the run fails with the provider's error and exits
+# EX_RATE_LIMITED; OpenCode otherwise waits silently, up to 15 minutes a retry.
 # --idle-timeout stops a run that emits no event for that long (default 1800),
-# reports what OpenCode was waiting on, and exits EX_STALL (#53). OpenCode 2
-# waits out a provider's retry-after (up to 15 minutes, ten times) without an
-# event or a log line, so a rate-limited run ends here too.
+# reports what OpenCode was waiting on, and exits EX_STALL (#53).
 # The prompt must not start with "-": OpenCode 2 sends anything after its own
 # "--" twice, so the prompt goes to it as a plain argument.
 
@@ -28,10 +31,11 @@ EX_USAGE=2
 EX_CLEANUP=70
 EX_SETUP=71
 EX_STALL=75
+EX_RATE_LIMITED=76
 
 err() { printf 'run-profiled: %s\n' "$*" >&2; }
 usage() {
-  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] [--provider-timeout SECONDS] [--idle-timeout SECONDS] -- "PROMPT"'
+  err 'usage: run-profiled.sh --workspace /abs/path --profile NAME --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] [--provider-timeout SECONDS] [--rate-limit-grace SECONDS] [--idle-timeout SECONDS] -- "PROMPT"'
   exit "$EX_USAGE"
 }
 
@@ -41,6 +45,7 @@ model=""
 variant=""
 agent="reviewer"
 provider_timeout=120
+rate_limit_grace=60
 idle_timeout=1800
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,6 +55,7 @@ while [ $# -gt 0 ]; do
     --variant)   [ $# -ge 2 ] && [ -n "$2" ] || usage; variant="$2"; shift 2 ;;
     --agent)     [ $# -ge 2 ] || usage; agent="$2"; shift 2 ;;
     --provider-timeout) [ $# -ge 2 ] || usage; provider_timeout="$2"; shift 2 ;;
+    --rate-limit-grace) [ $# -ge 2 ] || usage; rate_limit_grace="$2"; shift 2 ;;
     --idle-timeout) [ $# -ge 2 ] || usage; idle_timeout="$2"; shift 2 ;;
     --) shift; break ;;
     -h|--help) usage ;;
@@ -65,7 +71,7 @@ case "$prompt" in -*) err 'prompt must not start with "-"'; exit "$EX_USAGE" ;; 
 case "$workspace" in /*) ;; *) err "workspace must be absolute: $workspace"; exit "$EX_USAGE" ;; esac
 case "$model" in */*) ;; *) err "model must use provider/model form: $model"; exit "$EX_USAGE" ;; esac
 case "$variant" in ""|[a-z]*) ;; *) err "variant must be a plain word: $variant"; exit "$EX_USAGE" ;; esac
-for seconds in "$provider_timeout" "$idle_timeout"; do
+for seconds in "$provider_timeout" "$rate_limit_grace" "$idle_timeout"; do
   case "$seconds" in ""|0*|*[!0-9]*) err "timeouts must be positive integers: $seconds"; exit "$EX_USAGE" ;; esac
 done
 [ "$(uname -s)" = Linux ] || { err 'profiled OpenCode dispatch requires Linux'; exit "$EX_SETUP"; }
@@ -105,10 +111,17 @@ gh_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}"
 [ -f "$gh_config/hosts.yml" ] \
   || { err "no gh authentication in $gh_config; run gh auth login first"; exit "$EX_SETUP"; }
 
-# A stalled provider otherwise leaves OpenCode silent for up to 300 s per attempt.
+# A stalled provider otherwise leaves OpenCode silent for up to 300 s per
+# attempt. The plugin, read from the /skills mount, bounds rate-limit waits.
 config_json="$(jq -c --arg id "${model%%/*}" --argjson ms "$((provider_timeout * 1000))" \
-  '.provider[$id].options |= {headerTimeout: $ms, chunkTimeout: $ms} + .' "$profile_file")" \
+  --arg plugin "/skills/$(basename "$skill_dir")/plugins/decline-long-retry" \
+  --argjson grace "$((rate_limit_grace * 1000))" \
+  '.provider[$id].options |= {headerTimeout: $ms, chunkTimeout: $ms} + .
+   | .plugins += [{package: $plugin, options: {graceMs: $grace}}]' "$profile_file")" \
   || { err 'cannot read profile config'; exit "$EX_SETUP"; }
+# OpenCode 2 always reads the system config directory, plugins included.
+etc_args=()
+[ ! -d /etc/opencode ] || etc_args=(--tmpfs /etc/opencode)
 run_dir="$(mktemp -d "${TMPDIR:-/tmp}/opencode-profile.XXXXXXXX")" \
   || { err 'cannot create disposable OpenCode state'; exit "$EX_SETUP"; }
 child=""
@@ -138,6 +151,7 @@ bwrap \
   --ro-bind-try /lib /lib \
   --ro-bind-try /lib64 /lib64 \
   --ro-bind /etc /etc \
+  "${etc_args[@]}" \
   --ro-bind-try /run/systemd/resolve /run/systemd/resolve \
   --ro-bind-try /run/resolvconf /run/resolvconf \
   --proc /proc --dev /dev --tmpfs /tmp \
@@ -161,6 +175,7 @@ bwrap \
   --setenv TMPDIR /state/tmp \
   --unsetenv OPENCODE_CONFIG \
   --unsetenv OPENCODE_CONFIG_DIR \
+  --setenv OPENCODE_CONFIG_PROJECT_DISABLE 1 \
   --setenv OPENCODE_DISABLE_PROJECT_CONFIG 1 \
   --setenv OPENCODE_CONFIG_CONTENT "$config_json" \
   /opt/opencode run --standalone --format json --agent "$agent" --model "$model${variant:+#$variant}" "$prompt" \
@@ -192,12 +207,14 @@ log="$state_root/data/opencode/log/opencode.log"
 buf=""
 line=""
 stop=""
+last_error=""
 last_event=$SECONDS
 while :; do
   read_status=0
   IFS= read -r -t 1 line || read_status=$?
   if [ "$read_status" -eq 0 ]; then
     printf '%s\n' "$buf$line"
+    case "$buf$line" in '{"type":"error"'*) last_error="$buf$line" ;; esac
     buf="" line="" last_event=$SECONDS
   elif [ "$read_status" -gt 128 ]; then
     [ -z "$line" ] || { buf+="$line"; line=""; last_event=$SECONDS; }
@@ -219,7 +236,17 @@ case "$stop" in
     child_exit="$EX_STALL" ;;
   *)
     wait "$child"
-    child_exit=$? ;;
+    child_exit=$?
+    # A failed run whose last error is a rate limit or overload, whether the
+    # plugin declined a long wait or OpenCode ran out of retries.
+    status="$(jq -r '.error.status // empty' <<< "$last_error" 2>/dev/null)"
+    case "$child_exit:$status" in
+      0:*) ;;
+      *:429|*:503|*:529)
+        err "provider rate limit or overload; stopped the run rather than wait longer than ${rate_limit_grace}s:"
+        jq -r '.error.message' <<< "$last_error" >&2
+        child_exit="$EX_RATE_LIMITED" ;;
+    esac ;;
 esac
 child=""
 

@@ -72,7 +72,9 @@ swap for its default agent.
 
 The runner starts OpenCode with `--standalone`, a private server inside the
 sandbox, so a profiled run never attaches to the user's background service and
-its config and credentials.
+its config and credentials. OpenCode sees no user, project or system
+(`/etc/opencode`) config or plugins; the only plugin is the runner's own,
+below.
 
 The runner mounts the workspace read-only at its own path, and a linked
 worktree's repository git dir with it, so `git` and `gh` work inside as they do
@@ -90,10 +92,11 @@ those waits:
   on (its stdin, kernel wait channel and TCP connections) and the log tail.
   Treat 75 as a failed run and report those lines rather than retrying
   blindly.
-- OpenCode 2 waits out a provider's rate limit or overload silently, honoring
-  retry-after up to 15 minutes for up to ten retries, and logs nothing. A
-  rate-limited run therefore ends at the idle timeout. Lower `--idle-timeout`
-  when a fast fallback to another provider matters more than waiting.
+- OpenCode 2 waits out a provider's rate limit or overload (429, 503, 529)
+  silently, honoring retry-after up to 15 minutes a retry. The runner's plugin
+  lets it wait at most `--rate-limit-grace SECONDS` (default 60); a longer
+  retry-after fails the run, and the runner prints the provider's error and
+  exits 76. Retry later or dispatch another provider.
 
 ### available profiles
 
