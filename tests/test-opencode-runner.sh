@@ -18,9 +18,15 @@ pass() { echo "ok: $*"; }
 FAKE_BIN="$TMP/bin"
 mkdir -p "$FAKE_BIN" || exit 1
 
+# Stored credentials live in FAKE_CREDENTIALS_DIR/<provider>.json; an import
+# records the file it got and the data directory it imported into.
 cat > "$FAKE_BIN/opencode" <<'FAKE'
 #!/usr/bin/env bash
-exit 99
+case "$1 $2 $3" in
+  "auth export --standalone") cat "$FAKE_CREDENTIALS_DIR/$4.json" 2>/dev/null || exit 1 ;;
+  "auth import --standalone") cp "$4" "$FAKE_IMPORTED" && printf '%s\n' "$XDG_DATA_HOME" > "$FAKE_IMPORTED.data" ;;
+  *) exit 99 ;;
+esac
 FAKE
 
 cat > "$FAKE_BIN/gh" <<'FAKE'
@@ -60,13 +66,16 @@ RUN_TMPDIR="$TMP/state"
 FAKE_HOME="$TMP/home"
 FAKE_DATA="$TMP/data"
 mkdir -p "$WS" "$RUN_TMPDIR" "$FAKE_HOME/.config/gh" "$FAKE_DATA/opencode" || exit 1
-touch "$FAKE_HOME/.config/gh/hosts.yml" "$FAKE_DATA/opencode/auth.json" || exit 1
+touch "$FAKE_HOME/.config/gh/hosts.yml" || exit 1
+mkdir -p "$TMP/credentials" || exit 1
+echo '[{"integrationID":"openrouter","value":{"type":"key","key":"sk-test"}}]' > "$TMP/credentials/openrouter.json" || exit 1
 
 run_runner() {
   env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR \
     PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
     HOME="$FAKE_HOME" XDG_DATA_HOME="$FAKE_DATA" \
     BWRAP_ARGS="$TMP/bwrap.args" FAKE_SANDBOXED="$TMP/sandboxed/opencode" \
+    FAKE_CREDENTIALS_DIR="$TMP/credentials" FAKE_IMPORTED="$TMP/imported" \
     "$RUNNER" "$@"
 }
 config_arg() {
@@ -103,9 +112,12 @@ fi
 grep -Fxq -- "--standalone" "$TMP/bwrap.args" && ! grep -Fxq -- "--pure" "$TMP/bwrap.args" \
   && pass "runner starts a private OpenCode server, not the background service" \
   || fail "runner may attach to the background service"
-grep -Fxq -- "$FAKE_DATA/opencode/auth.json" "$TMP/bwrap.args" \
-  && grep -Fxq -- "/state/data/opencode/auth.json" "$TMP/bwrap.args" \
-  && pass "runner mounts stored provider credentials" || fail "provider credential mount missing"
+state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
+[ "$(cat "$TMP/imported")" = "$(cat "$TMP/credentials/openrouter.json")" ] && [ "$(cat "$TMP/imported.data")" = "$state_root/data" ] \
+  && pass "the selected provider's credential is imported into disposable state" \
+  || fail "credential import: $(cat "$TMP/imported.data" 2>/dev/null) vs $state_root/data"
+grep -q 'auth\.json\|credentials\.json' "$TMP/bwrap.args" \
+  && fail "a credential file is mounted into the sandbox" || pass "no credential file enters the sandbox"
 grep -Fxq -- "$FAKE_HOME/.config/gh" "$TMP/bwrap.args" \
   && grep -Fxq -- "/state/config/gh" "$TMP/bwrap.args" \
   && pass "runner mounts stored gh authentication" || fail "gh authentication mount missing"
@@ -320,17 +332,14 @@ state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; ex
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "failed dispatch state is removed" || fail "failed dispatch left state: $state_root"
 
-# Missing stored credentials fail before bubblewrap is launched.
-rm -f "$TMP/bwrap.args"
+# A provider with no stored credential (a free model) runs without one.
+rm -f "$TMP/bwrap.args" "$TMP/imported"
 rc=0
-env -u XDG_CONFIG_HOME -u GH_CONFIG_DIR PATH="$FAKE_BIN:$PATH" TMPDIR="$RUN_TMPDIR" \
-  HOME="$FAKE_HOME" XDG_DATA_HOME="$TMP/no-such-data" \
-  BWRAP_ARGS="$TMP/bwrap.args" \
-  "$RUNNER" --workspace "$WS" --profile github-pr-reviewer \
-  --model openrouter/example-model -- "task" >/dev/null 2>&1 || rc=$?
-[ "$rc" -eq 71 ] && [ ! -f "$TMP/bwrap.args" ] \
-  && pass "missing provider credentials are refused before launch" \
-  || fail "missing-credentials refusal: rc=$rc launched=$([ -f "$TMP/bwrap.args" ] && echo yes || echo no)"
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model opencode/free-model -- "task" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 0 ] && [ -f "$TMP/bwrap.args" ] && [ ! -e "$TMP/imported" ] \
+  && pass "a provider without a stored credential launches without one" \
+  || fail "no-credential launch: rc=$rc"
 
 rm -f "$TMP/bwrap.args"
 rc=0

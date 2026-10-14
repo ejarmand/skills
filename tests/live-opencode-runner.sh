@@ -3,8 +3,8 @@
 #
 # Runs the real opencode inside real bubblewrap against a local fake
 # OpenAI-compatible provider, so no network or provider account is needed:
-# the profile's openrouter baseURL points at the fake, and throwaway
-# credentials stand in for the stored ones. Checks that an open stdin pipe no longer
+# the profile's openrouter baseURL points at the fake, which needs no
+# credential. Checks that an open stdin pipe no longer
 # hangs, that the prompt reaches the provider once, that a provider which never
 # answers ends in a clean error, that the idle watchdog reports what OpenCode
 # was waiting on, and that a long retry-after on a 429 ends at that watchdog.
@@ -35,7 +35,6 @@ cp -R "$REPO/skills/opencode-agent" "$REPO/skills/code-review" "$TMP/skills/" ||
 RUNNER="$TMP/skills/opencode-agent/scripts/run-profiled.sh"
 PROFILE="$TMP/skills/opencode-agent/profiles/github-pr-reviewer/config.json"
 printf '#!/bin/sh\necho "fake-gh-ran $*"\n' > "$TMP/bin/gh" && chmod +x "$TMP/bin/gh" || exit 1
-echo '{"openrouter":{"type":"api","key":"sk-live-test"}}' > "$TMP/data/opencode/auth.json" || exit 1
 touch "$TMP/gh/hosts.yml" || exit 1
 git -C "$TMP/ws" init -q && echo hello > "$TMP/ws/README" && git -C "$TMP/ws" add README \
   && git -C "$TMP/ws" -c user.name=test -c user.email=test@example.com commit -qm init || exit 1

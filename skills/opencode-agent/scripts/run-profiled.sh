@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Run one OpenCode session inside a named bubblewrap authority profile.
 #
-# Stored OpenCode provider credentials (auth.json) and gh CLI authentication
-# are mounted read-only, so `opencode auth login` and `gh auth login` are the
-# only credential setup; OpenCode state is disposable.
+# The selected provider's stored OpenCode credential is copied into disposable
+# OpenCode state and gh CLI authentication is mounted read-only, so
+# `opencode auth login` and `gh auth login` are the only credential setup.
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME \
 #   --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] \
@@ -104,9 +104,6 @@ git_args=()
 common_dir="$(git -C "$workspace" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common_dir=""
 case "$common_dir" in ""|"$workspace"/*) ;; *) git_args=(--ro-bind "$common_dir" "$common_dir") ;; esac
 
-auth_json="${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json"
-[ -f "$auth_json" ] \
-  || { err "no OpenCode provider credentials in $auth_json; run opencode auth login first"; exit "$EX_SETUP"; }
 gh_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}"
 [ -f "$gh_config/hosts.yml" ] \
   || { err "no gh authentication in $gh_config; run gh auth login first"; exit "$EX_SETUP"; }
@@ -139,8 +136,24 @@ state_root="$run_dir/state"
 events="$run_dir/events"
 mkdir -p "$state_root"/{home,config/gh,config/opencode,data/opencode,cache/opencode,xdg-state,tmp} \
   || setup_fail
-touch "$state_root/data/opencode/auth.json" || setup_fail
 mkfifo "$events" || setup_fail
+
+# OpenCode 2 keeps credentials in its database and no longer reads auth.json,
+# so import the selected provider's into the disposable state. A provider with
+# none stored (a free model, a custom endpoint) runs without one. OpenCode
+# unpacks native libraries into TMPDIR, so both calls use the disposable one.
+credentials="$(TMPDIR="$state_root/tmp" "$opencode_bin" auth export --standalone "${model%%/*}" 2>/dev/null < /dev/null)" \
+  || credentials='[]'
+if [ "$(jq 'length' <<< "$credentials" 2>/dev/null)" != 0 ]; then
+  (umask 077 && printf '%s' "$credentials" > "$run_dir/credentials.json") || setup_fail
+  (cd "$state_root" && env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_DIR \
+    HOME="$state_root/home" XDG_CONFIG_HOME="$state_root/config" XDG_DATA_HOME="$state_root/data" \
+    XDG_CACHE_HOME="$state_root/cache" XDG_STATE_HOME="$state_root/xdg-state" TMPDIR="$state_root/tmp" \
+    OPENCODE_CONFIG_PROJECT_DISABLE=1 OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+    "$opencode_bin" auth import --standalone "$run_dir/credentials.json") < /dev/null > /dev/null 2>&1 \
+    || { err "cannot import the stored ${model%%/*} credential"; setup_fail; }
+  rm -f "$run_dir/credentials.json" || setup_fail
+fi
 
 bwrap \
   --die-with-parent --new-session \
@@ -162,7 +175,6 @@ bwrap \
   "${git_args[@]}" \
   --ro-bind "$repo_skills" /skills \
   --bind "$state_root" /state \
-  --ro-bind "$auth_json" /state/data/opencode/auth.json \
   --ro-bind "$gh_config" /state/config/gh \
   --ro-bind "$state_root/config/opencode" /state/config/opencode \
   --chdir "$workspace" \
