@@ -3,11 +3,16 @@
 #
 # Runs the real opencode inside real bubblewrap against a local fake
 # OpenAI-compatible provider, so no network or provider account is needed:
-# the profile's openrouter baseURL points at the fake, and throwaway
-# credentials stand in for the stored ones. Checks that an open stdin pipe no longer
-# hangs, that a provider which never answers ends in a clean error, that a
-# long retry-after on a 429 or 503 exits 76, and that the idle watchdog reports
-# what OpenCode was waiting on. Takes about two minutes.
+# the profile's openrouter baseURL points at the fake, which needs no
+# credential. Checks that an open stdin pipe no longer
+# hangs, that the prompt reaches the provider once, that a provider which never
+# answers ends in a clean error, that the idle watchdog reports what OpenCode
+# was waiting on, and that a long retry-after on a 429 ends at that watchdog.
+# Also checks that a long retry-after on a 429 or 503 exits 76 while a short
+# one is waited out, and that workspace plugins stay out of the run even when
+# the caller's environment re-enables project config. Checks the profile's
+# shell permissions with tool calls from the fake provider. Takes about three
+# minutes.
 set -u -o pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)" || exit 1
@@ -29,40 +34,60 @@ mkdir -p "$TMP/skills" "$TMP/bin" "$TMP/data/opencode" "$TMP/gh" "$TMP/state" "$
 cp -R "$REPO/skills/opencode-agent" "$REPO/skills/code-review" "$TMP/skills/" || exit 1
 RUNNER="$TMP/skills/opencode-agent/scripts/run-profiled.sh"
 PROFILE="$TMP/skills/opencode-agent/profiles/github-pr-reviewer/config.json"
-printf '#!/bin/sh\nexit 1\n' > "$TMP/bin/gh" && chmod +x "$TMP/bin/gh" || exit 1
-echo '{"openrouter":{"type":"api","key":"sk-live-test"}}' > "$TMP/data/opencode/auth.json" || exit 1
+printf '#!/bin/sh\necho "fake-gh-ran $*"\n' > "$TMP/bin/gh" && chmod +x "$TMP/bin/gh" || exit 1
 touch "$TMP/gh/hosts.yml" || exit 1
 git -C "$TMP/ws" init -q && echo hello > "$TMP/ws/README" && git -C "$TMP/ws" add README \
   && git -C "$TMP/ws" -c user.name=test -c user.email=test@example.com commit -qm init || exit 1
 
 cat > "$TMP/fakeprov.py" <<'PY'
 # Fake OpenAI-compatible provider. MODE ok: stream "OK"; hang: accept and never
-# answer; 429 or 503: rate limit or overload with a 900 s retry-after. Writes
-# its port to argv[2].
+# answer; 429 or 503: rate limit or overload with a 900 s retry-after; 429-brief:
+# the first two requests get a 429 with a 2 s retry-after, then "OK";
+# shell:COMMAND: a shell tool call running COMMAND, then "OK"; subagent:AGENT:
+# a subagent tool call spawning AGENT, then "OK". Writes
+# its port to argv[2], and request lines and bodies to argv[3].
 import http.server, json, sys, time
 mode = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    posts = 0
     def do_POST(self):
-        self.rfile.read(int(self.headers.get("content-length", 0)))
+        H.posts += 1
+        body = self.rfile.read(int(self.headers.get("content-length", 0)))
+        with open(sys.argv[3], "ab") as log:
+            log.write(body + b"\n")
         if mode == "hang":
             time.sleep(3600)
-        if mode in ("429", "503"):
-            message = "Rate limit exceeded" if mode == "429" else "Service overloaded"
-            body = json.dumps({"error": {"message": message, "code": int(mode)}}).encode()
-            self.send_response(int(mode))
-            self.send_header("retry-after", "900")
+        brief = mode == "429-brief" and H.posts <= 2
+        if mode in ("429", "503") or brief:
+            message = "Service overloaded" if mode == "503" else "Rate limit exceeded"
+            status = 503 if mode == "503" else 429
+            body = json.dumps({"error": {"message": message, "code": status}}).encode()
+            self.send_response(status)
+            self.send_header("retry-after", "2" if brief else "900")
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
             return
+        request = json.loads(body or b"{}")
+        tool_name, _, tool_arg = mode.partition(":")
+        call = tool_name in ("shell", "subagent") \
+            and any(t["function"]["name"] == tool_name for t in request.get("tools", [])) \
+            and not any(m["role"] == "tool" for m in request.get("messages", []))
         chunk = lambda delta, finish: "data: " + json.dumps({
             "id": "fake", "object": "chat.completion.chunk", "created": 0, "model": "fake",
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
             **({"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}} if finish else {}),
         }) + "\n\n"
-        body = (chunk({"role": "assistant", "content": "OK"}, None) + chunk({}, "stop") + "data: [DONE]\n\n").encode()
+        if call:
+            arguments = {"command": tool_arg} if tool_name == "shell" else \
+                {"agent": tool_arg, "description": "probe", "prompt": "Reply with the single word OK."}
+            tool = {"index": 0, "id": "call_1", "type": "function",
+                    "function": {"name": tool_name, "arguments": json.dumps(arguments)}}
+            body = (chunk({"role": "assistant", "tool_calls": [tool]}, None) + chunk({}, "tool_calls") + "data: [DONE]\n\n").encode()
+        else:
+            body = (chunk({"role": "assistant", "content": "OK"}, None) + chunk({}, "stop") + "data: [DONE]\n\n").encode()
         self.send_response(200)
         self.send_header("content-type", "text/event-stream")
         self.send_header("content-length", str(len(body)))
@@ -110,11 +135,15 @@ run_live
 [ "$rc" -eq 0 ] && grep -q '"type":"text"' "$TMP/out" && [ -s "$TMP/requests" ] \
   && pass "open stdin pipe: run reached the provider and finished in ${elapsed}s" \
   || fail "open stdin pipe: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
+# Title generation sends the prompt too, so count within each request.
+most="$(awk '{ n = gsub(/Reply with the single word OK\./, ""); if (n > max) max = n } END { print max + 0 }' "$TMP/requests")"
+[ "$most" -eq 1 ] && pass "each request carries the prompt once" \
+  || fail "a request carried the prompt $most times"
 
 start_provider hang
 run_live --provider-timeout 5
 [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ] && [ "$rc" -ne 75 ] && grep -q '"type":"error"' "$TMP/out" \
-  && pass "silent provider: clean exit $rc in ${elapsed}s: $(grep -o '"name":"[A-Za-z]*"' "$TMP/out" | head -n 1)" \
+  && pass "silent provider: clean exit $rc in ${elapsed}s: $(grep -o '"message":"[^"]*"' "$TMP/out" | head -n 1)" \
   || fail "silent provider: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
 
 run_live --provider-timeout 600 --idle-timeout 10
@@ -135,6 +164,41 @@ run_live --rate-limit-grace 5
 [ "$rc" -eq 76 ] && grep -q 'Service overloaded' "$TMP/err" \
   && pass "overloaded provider: exit 76 in ${elapsed}s" \
   || fail "overloaded provider: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
+
+start_provider 429-brief
+run_live --rate-limit-grace 5
+[ "$rc" -eq 0 ] && grep -q '"type":"text"' "$TMP/out" && grep -q ' 429 ' "$TMP/requests" \
+  && pass "a retry-after within the grace is waited out: finished in ${elapsed}s" \
+  || fail "brief rate limit: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
+
+# A workspace plugin would run inside OpenCode with its credentials. It posts
+# to the fake provider when loaded.
+start_provider ok
+mkdir -p "$TMP/ws/.opencode/plugins/sentinel" || exit 1
+printf 'await fetch("http://127.0.0.1:%s/sentinel", { method: "POST", body: "sentinel-plugin-loaded" })\nexport default { id: "sentinel", setup: async () => {} }\n' \
+  "$(cat "$TMP/port")" > "$TMP/ws/.opencode/plugins/sentinel/server.js" || exit 1
+OPENCODE_CONFIG_PROJECT_DISABLE=0 OPENCODE_DISABLE_PROJECT_CONFIG=0 run_live
+rm -rf "$TMP/ws/.opencode"
+[ "$rc" -eq 0 ] && ! grep -q sentinel-plugin-loaded "$TMP/requests" \
+  && pass "workspace plugins stay out when the caller re-enables project config" \
+  || fail "workspace plugin: rc=$rc loaded=$(grep -c sentinel-plugin-loaded "$TMP/requests")"
+
+# expect_call TOOL ARG STATUS OUTPUT: the reviewer's TOOL call with ARG ends
+# in STATUS with OUTPUT in its result.
+expect_call() {
+  start_provider "$1:$2"
+  run_live
+  result="$(jq -r 'select(.type == "tool_use") | "\(.part.state.status) \(.part.state.output // .part.state.error // "")"' "$TMP/out" | head -n 1)"
+  [ "$rc" -eq 0 ] && [ "${result%% *}" = "$3" ] && grep -Fq -- "$4" <<< "$result" \
+    && pass "profile: $1 $2 -> $3" || fail "profile: $1 $2: rc=$rc result=$result"
+}
+expect_shell() { expect_call shell "$@"; }
+expect_shell "git status --short" completed ""
+expect_shell "touch /state/tmp/denied" error "Permission denied"
+expect_shell "gh pr review 1 --approve" error "Permission denied"
+expect_shell "gh pr comment 1 --body hi" completed "fake-gh-ran pr comment 1"
+expect_shell "opencode run hi" error "Permission denied"
+expect_call subagent general error "Permission denied"
 
 [ -z "$(ls -A "$TMP/state")" ] && pass "runner left no disposable state" \
   || fail "runner left state: $(ls "$TMP/state")"

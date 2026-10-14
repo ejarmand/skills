@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Run one OpenCode session inside a named bubblewrap authority profile.
 #
-# Stored OpenCode provider credentials (auth.json) and gh CLI authentication
-# are mounted read-only, so `opencode auth login` and `gh auth login` are the
-# only credential setup; OpenCode state is disposable.
+# The selected provider's stored OpenCode credential is copied into disposable
+# OpenCode state and gh CLI authentication is mounted read-only, so
+# `opencode auth login` and `gh auth login` are the only credential setup.
 #
 # usage: run-profiled.sh --workspace /abs/path --profile NAME \
 #   --model PROVIDER/MODEL [--variant LEVEL] [--agent NAME] \
@@ -11,15 +11,19 @@
 #   [--idle-timeout SECONDS] -- "PROMPT"
 #
 # --agent selects the profile's primary agent (default: reviewer).
-# --variant passes a provider-specific reasoning setting through unchanged.
+# --variant passes a provider-specific reasoning setting through unchanged, as
+# the PROVIDER/MODEL#LEVEL form OpenCode 2 takes.
 # --provider-timeout bounds the wait for a provider's response headers and
 # between stream chunks (default 120; OpenCode's own default is 300 per
 # attempt, retried about nine times, with no output). Profile values win.
-# --rate-limit-grace stops a run once OpenCode logs a rate-limit or overload
-# error and then emits no event for that long (default 60), and exits
-# EX_RATE_LIMITED; OpenCode otherwise retries silently, honoring retry-after.
+# --rate-limit-grace is the longest retry-after OpenCode may wait out after a
+# provider rate limit or overload (default 60). The runner's plugin declines a
+# longer wait, so the run fails with the provider's error and exits
+# EX_RATE_LIMITED; OpenCode otherwise waits silently, up to 15 minutes a retry.
 # --idle-timeout stops a run that emits no event for that long (default 1800),
 # reports what OpenCode was waiting on, and exits EX_STALL (#53).
+# The prompt must not start with "-": OpenCode 2 sends anything after its own
+# "--" twice, so the prompt goes to it as a plain argument.
 
 set -u -o pipefail
 
@@ -63,14 +67,13 @@ done
 [ $# -eq 1 ] || usage
 prompt="$1"
 [ -n "$prompt" ] || usage
+case "$prompt" in -*) err 'prompt must not start with "-"'; exit "$EX_USAGE" ;; esac
 case "$workspace" in /*) ;; *) err "workspace must be absolute: $workspace"; exit "$EX_USAGE" ;; esac
 case "$model" in */*) ;; *) err "model must use provider/model form: $model"; exit "$EX_USAGE" ;; esac
 case "$variant" in ""|[a-z]*) ;; *) err "variant must be a plain word: $variant"; exit "$EX_USAGE" ;; esac
 for seconds in "$provider_timeout" "$rate_limit_grace" "$idle_timeout"; do
   case "$seconds" in ""|0*|*[!0-9]*) err "timeouts must be positive integers: $seconds"; exit "$EX_USAGE" ;; esac
 done
-variant_args=()
-[ -z "$variant" ] || variant_args=(--variant "$variant")
 [ "$(uname -s)" = Linux ] || { err 'profiled OpenCode dispatch requires Linux'; exit "$EX_SETUP"; }
 [ -d "$workspace" ] || { err "workspace is not a directory: $workspace"; exit "$EX_USAGE"; }
 workspace="$(cd "$workspace" && pwd -P)" || { err 'cannot resolve workspace'; exit "$EX_USAGE"; }
@@ -101,17 +104,21 @@ git_args=()
 common_dir="$(git -C "$workspace" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || common_dir=""
 case "$common_dir" in ""|"$workspace"/*) ;; *) git_args=(--ro-bind "$common_dir" "$common_dir") ;; esac
 
-auth_json="${XDG_DATA_HOME:-$HOME/.local/share}/opencode/auth.json"
-[ -f "$auth_json" ] \
-  || { err "no OpenCode provider credentials in $auth_json; run opencode auth login first"; exit "$EX_SETUP"; }
 gh_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}"
 [ -f "$gh_config/hosts.yml" ] \
   || { err "no gh authentication in $gh_config; run gh auth login first"; exit "$EX_SETUP"; }
 
-# A stalled provider otherwise leaves OpenCode silent for up to 300 s per attempt.
+# A stalled provider otherwise leaves OpenCode silent for up to 300 s per
+# attempt. The plugin, read from the /skills mount, bounds rate-limit waits.
 config_json="$(jq -c --arg id "${model%%/*}" --argjson ms "$((provider_timeout * 1000))" \
-  '.provider[$id].options |= {headerTimeout: $ms, chunkTimeout: $ms} + .' "$profile_file")" \
+  --arg plugin "/skills/$(basename "$skill_dir")/plugins/decline-long-retry" \
+  --argjson grace "$((rate_limit_grace * 1000))" \
+  '.provider[$id].options |= {headerTimeout: $ms, chunkTimeout: $ms} + .
+   | .plugins += [{package: $plugin, options: {graceMs: $grace}}]' "$profile_file")" \
   || { err 'cannot read profile config'; exit "$EX_SETUP"; }
+# OpenCode 2 always reads the system config directory, plugins included.
+etc_args=()
+[ ! -d /etc/opencode ] || etc_args=(--tmpfs /etc/opencode)
 run_dir="$(mktemp -d "${TMPDIR:-/tmp}/opencode-profile.XXXXXXXX")" \
   || { err 'cannot create disposable OpenCode state'; exit "$EX_SETUP"; }
 child=""
@@ -129,19 +136,24 @@ state_root="$run_dir/state"
 events="$run_dir/events"
 mkdir -p "$state_root"/{home,config/gh,config/opencode,data/opencode,cache/opencode,xdg-state,tmp} \
   || setup_fail
-touch "$state_root/data/opencode/auth.json" || setup_fail
-# OpenCode npm-installs its plugin package into any writable config directory on
-# every start; a read-only one (with the .gitignore it would write) skips that.
-touch "$state_root/config/opencode/.gitignore" || setup_fail
-# Seed the models.dev catalog from the host cache when present: a fresh sandbox
-# otherwise fetches it at startup, and a failed fetch under concurrency makes
-# every model "not found". Copy it, keeping its age, so a stale catalog still
-# refreshes into disposable state.
-models_cache="${XDG_CACHE_HOME:-$HOME/.cache}/opencode/models.json"
-if [ -f "$models_cache" ]; then
-  cp -p "$models_cache" "$state_root/cache/opencode/models.json" || setup_fail
-fi
 mkfifo "$events" || setup_fail
+
+# OpenCode 2 keeps credentials in its database and no longer reads auth.json,
+# so import the selected provider's into the disposable state. A provider with
+# none stored (a free model, a custom endpoint) runs without one. OpenCode
+# unpacks native libraries into TMPDIR, so both calls use the disposable one.
+credentials="$(TMPDIR="$state_root/tmp" "$opencode_bin" auth export --standalone "${model%%/*}" 2>/dev/null < /dev/null)" \
+  || credentials='[]'
+if [ "$(jq 'length' <<< "$credentials" 2>/dev/null)" != 0 ]; then
+  (umask 077 && printf '%s' "$credentials" > "$run_dir/credentials.json") || setup_fail
+  (cd "$state_root" && env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_DIR \
+    HOME="$state_root/home" XDG_CONFIG_HOME="$state_root/config" XDG_DATA_HOME="$state_root/data" \
+    XDG_CACHE_HOME="$state_root/cache" XDG_STATE_HOME="$state_root/xdg-state" TMPDIR="$state_root/tmp" \
+    OPENCODE_CONFIG_PROJECT_DISABLE=1 OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+    "$opencode_bin" auth import --standalone "$run_dir/credentials.json") < /dev/null > /dev/null 2>&1 \
+    || { err "cannot import the stored ${model%%/*} credential"; setup_fail; }
+  rm -f "$run_dir/credentials.json" || setup_fail
+fi
 
 bwrap \
   --die-with-parent --new-session \
@@ -152,6 +164,7 @@ bwrap \
   --ro-bind-try /lib /lib \
   --ro-bind-try /lib64 /lib64 \
   --ro-bind /etc /etc \
+  "${etc_args[@]}" \
   --ro-bind-try /run/systemd/resolve /run/systemd/resolve \
   --ro-bind-try /run/resolvconf /run/resolvconf \
   --proc /proc --dev /dev --tmpfs /tmp \
@@ -162,7 +175,6 @@ bwrap \
   "${git_args[@]}" \
   --ro-bind "$repo_skills" /skills \
   --bind "$state_root" /state \
-  --ro-bind "$auth_json" /state/data/opencode/auth.json \
   --ro-bind "$gh_config" /state/config/gh \
   --ro-bind "$state_root/config/opencode" /state/config/opencode \
   --chdir "$workspace" \
@@ -175,86 +187,52 @@ bwrap \
   --setenv TMPDIR /state/tmp \
   --unsetenv OPENCODE_CONFIG \
   --unsetenv OPENCODE_CONFIG_DIR \
+  --setenv OPENCODE_CONFIG_PROJECT_DISABLE 1 \
   --setenv OPENCODE_DISABLE_PROJECT_CONFIG 1 \
-  --setenv OPENCODE_DISABLE_CLAUDE_CODE 1 \
-  --setenv OPENCODE_DISABLE_EXTERNAL_SKILLS 1 \
-  --setenv OPENCODE_PURE 1 \
   --setenv OPENCODE_CONFIG_CONTENT "$config_json" \
-  /opt/opencode run --pure --format json --agent "$agent" --model "$model" "${variant_args[@]}" -- "$prompt" \
+  /opt/opencode run --standalone --format json --agent "$agent" --model "$model${variant:+#$variant}" "$prompt" \
   < /dev/null > "$events" &
 child=$!
 
-# Report what the stalled OpenCode process (the first one below bwrap) waits on.
+# Report what each OpenCode process below bwrap waits on: the run client and
+# the standalone server it starts, which holds the provider connections.
 report_stall() {
-  local parents="$child" rows="" pid=""
+  local parents="$child" rows="" pids="" pid=""
   while [ -n "$parents" ]; do
     rows="$(ps -o pid=,comm= --ppid "$parents")" || break
-    pid="$(awk '$2 == "opencode" { print $1; exit }' <<< "$rows")"
-    [ -z "$pid" ] || break
+    pids+=" $(awk '$2 == "opencode" { print $1 }' <<< "$rows")"
     parents="$(awk '{ print $1 }' <<< "$rows" | paste -sd, -)"
   done
-  [ -n "$pid" ] || { err 'no OpenCode process found'; return; }
-  err "OpenCode pid $pid stdin: $(readlink "/proc/$pid/fd/0")"
-  err "OpenCode pid $pid wchan: $(cat "/proc/$pid/wchan")"
-  err "OpenCode pid $pid established TCP connections:"
-  command -v ss >/dev/null 2>&1 || { err '  unavailable: ss is not installed'; return; }
-  ss -tnpH state established | grep -F "pid=$pid," >&2 || err '  none'
+  [ -n "${pids// /}" ] || { err 'no OpenCode process found'; return; }
+  for pid in $pids; do
+    err "OpenCode pid $pid stdin: $(readlink "/proc/$pid/fd/0")"
+    err "OpenCode pid $pid wchan: $(cat "/proc/$pid/wchan")"
+    err "OpenCode pid $pid established TCP connections:"
+    command -v ss >/dev/null 2>&1 || { err '  unavailable: ss is not installed'; continue; }
+    ss -tnpH state established | grep -F "pid=$pid," >&2 || err '  none'
+  done
 }
 
-# Relay events byte for byte, waking each second to check the log and the idle
-# clock. read -t keeps a partial line on timeout, so pieces collect in buf.
+# Relay events byte for byte, waking each second to check the idle clock.
+# read -t keeps a partial line on timeout, so pieces collect in buf.
 log="$state_root/data/opencode/log/opencode.log"
-# A stream error showing a rate limit or overload. Title generation
-# (small=true) failing does not block the run.
-limit_re='error\.error=.*(\b(429|503|529)\b|rate[ _-]?limit|too many requests|overloaded|service unavailable)'
 buf=""
 line=""
 stop=""
+last_error=""
 last_event=$SECONDS
-event_ms=""
-log_seen=0
-scanned_at=-1
-limited=""
-limited_at=0
-limited_ms=""
 while :; do
   read_status=0
   IFS= read -r -t 1 line || read_status=$?
   if [ "$read_status" -eq 0 ]; then
     printf '%s\n' "$buf$line"
-    # An event newer than the error clears it. Events and errors are ordered by
-    # OpenCode's timestamps, or by read order when either has none.
-    ts=""
-    [[ "$buf$line" =~ ^\{\"type\":\"[^\"]*\",\"timestamp\":([0-9]+) ]] && ts=${BASH_REMATCH[1]}
-    [ -z "$ts" ] || [ "$ts" -le "${event_ms:-0}" ] || event_ms=$ts
-    [ -n "$ts" ] && [ -n "$limited_ms" ] && [ "$ts" -lt "$limited_ms" ] || limited=""
+    case "$buf$line" in '{"type":"error"'*) last_error="$buf$line" ;; esac
     buf="" line="" last_event=$SECONDS
   elif [ "$read_status" -gt 128 ]; then
     [ -z "$line" ] || { buf+="$line"; line=""; last_event=$SECONDS; }
   else
     break
   fi
-  # Scan the log bytes written since the last scan, at most once a second. The
-  # newest error counts only if newer than every event seen; the grace runs
-  # from when the runner first sees an error.
-  if [ "$SECONDS" -ne "$scanned_at" ]; then
-    scanned_at=$SECONDS
-    log_size="$(stat -c %s "$log" 2>/dev/null)" || log_size=0
-    if [ "$log_size" -gt "$log_seen" ]; then
-      found="$(tail -c +"$((log_seen + 1))" "$log" | head -c "$((log_size - log_seen))" \
-        | grep -F -- 'message="stream error"' | grep -Ei -- "$limit_re" \
-        | grep -Ev -- '(^|[[:space:]])small=true([[:space:]]|$)' | tail -n 1)"
-      log_seen=$log_size
-      if [ -n "$found" ]; then
-        found_ms=""
-        [[ "$found" =~ ^timestamp=([^[:space:]]+) ]] && found_ms="$(date -d "${BASH_REMATCH[1]}" +%s%3N 2>/dev/null)"
-        [[ "$found_ms" =~ ^[0-9]+$ ]] || found_ms=""
-        [ -n "$found_ms" ] && [ -n "$event_ms" ] && [ "$found_ms" -le "$event_ms" ] \
-          || { [ -n "$limited" ] || limited_at=$SECONDS; limited="$found"; limited_ms=$found_ms; }
-      fi
-    fi
-  fi
-  [ -z "$limited" ] || [ $((SECONDS - limited_at)) -lt "$rate_limit_grace" ] || { stop=rate-limited; break; }
   [ $((SECONDS - last_event)) -lt "$idle_timeout" ] || { stop=idle; break; }
 done < "$events"
 [ -z "$buf$line" ] || printf '%s' "$buf$line"
@@ -268,15 +246,19 @@ case "$stop" in
     err 'Log tail:'
     tail -n 20 "$log" >&2 2>/dev/null
     child_exit="$EX_STALL" ;;
-  rate-limited)
-    kill "$child" 2>/dev/null
-    wait "$child"
-    err "provider rate limit or overload and no OpenCode event for ${rate_limit_grace}s; stopped the run:"
-    printf '%s\n' "$limited" >&2
-    child_exit="$EX_RATE_LIMITED" ;;
   *)
     wait "$child"
-    child_exit=$? ;;
+    child_exit=$?
+    # A failed run whose last error is a rate limit or overload, whether the
+    # plugin declined a long wait or OpenCode ran out of retries.
+    status="$(jq -r '.error.status // empty' <<< "$last_error" 2>/dev/null)"
+    case "$child_exit:$status" in
+      0:*) ;;
+      *:429|*:503|*:529)
+        err "provider rate limit or overload; stopped the run rather than wait longer than ${rate_limit_grace}s:"
+        jq -r '.error.message' <<< "$last_error" >&2
+        child_exit="$EX_RATE_LIMITED" ;;
+    esac ;;
 esac
 child=""
 
