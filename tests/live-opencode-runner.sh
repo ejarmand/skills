@@ -43,7 +43,8 @@ cat > "$TMP/fakeprov.py" <<'PY'
 # Fake OpenAI-compatible provider. MODE ok: stream "OK"; hang: accept and never
 # answer; 429 or 503: rate limit or overload with a 900 s retry-after; 429-brief:
 # the first two requests get a 429 with a 2 s retry-after, then "OK";
-# shell:COMMAND: a shell tool call running COMMAND, then "OK". Writes
+# shell:COMMAND: a shell tool call running COMMAND, then "OK"; subagent:AGENT:
+# a subagent tool call spawning AGENT, then "OK". Writes
 # its port to argv[2], and request lines and bodies to argv[3].
 import http.server, json, sys, time
 mode = sys.argv[1]
@@ -70,7 +71,9 @@ class H(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         request = json.loads(body or b"{}")
-        call = mode.startswith("shell:") and any(t["function"]["name"] == "shell" for t in request.get("tools", [])) \
+        tool_name, _, tool_arg = mode.partition(":")
+        call = tool_name in ("shell", "subagent") \
+            and any(t["function"]["name"] == tool_name for t in request.get("tools", [])) \
             and not any(m["role"] == "tool" for m in request.get("messages", []))
         chunk = lambda delta, finish: "data: " + json.dumps({
             "id": "fake", "object": "chat.completion.chunk", "created": 0, "model": "fake",
@@ -78,8 +81,10 @@ class H(http.server.BaseHTTPRequestHandler):
             **({"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}} if finish else {}),
         }) + "\n\n"
         if call:
+            arguments = {"command": tool_arg} if tool_name == "shell" else \
+                {"agent": tool_arg, "description": "probe", "prompt": "Reply with the single word OK."}
             tool = {"index": 0, "id": "call_1", "type": "function",
-                    "function": {"name": "shell", "arguments": json.dumps({"command": mode[6:]})}}
+                    "function": {"name": tool_name, "arguments": json.dumps(arguments)}}
             body = (chunk({"role": "assistant", "tool_calls": [tool]}, None) + chunk({}, "tool_calls") + "data: [DONE]\n\n").encode()
         else:
             body = (chunk({"role": "assistant", "content": "OK"}, None) + chunk({}, "stop") + "data: [DONE]\n\n").encode()
@@ -178,19 +183,22 @@ rm -rf "$TMP/ws/.opencode"
   && pass "workspace plugins stay out when the caller re-enables project config" \
   || fail "workspace plugin: rc=$rc loaded=$(grep -c sentinel-plugin-loaded "$TMP/requests")"
 
-# expect_shell COMMAND STATUS OUTPUT: the reviewer's shell call ends in STATUS
-# with OUTPUT in its result.
-expect_shell() {
-  start_provider "shell:$1"
+# expect_call TOOL ARG STATUS OUTPUT: the reviewer's TOOL call with ARG ends
+# in STATUS with OUTPUT in its result.
+expect_call() {
+  start_provider "$1:$2"
   run_live
-  result="$(jq -r 'select(.type == "tool_use") | "\(.part.state.status) \(.part.state.output // .part.state.error // "")"' "$TMP/out")"
-  [ "$rc" -eq 0 ] && [ "${result%% *}" = "$2" ] && grep -Fq -- "$3" <<< "$result" \
-    && pass "profile: $1 -> $2" || fail "profile: $1: rc=$rc result=$result"
+  result="$(jq -r 'select(.type == "tool_use") | "\(.part.state.status) \(.part.state.output // .part.state.error // "")"' "$TMP/out" | head -n 1)"
+  [ "$rc" -eq 0 ] && [ "${result%% *}" = "$3" ] && grep -Fq -- "$4" <<< "$result" \
+    && pass "profile: $1 $2 -> $3" || fail "profile: $1 $2: rc=$rc result=$result"
 }
+expect_shell() { expect_call shell "$@"; }
 expect_shell "git status --short" completed ""
 expect_shell "touch /state/tmp/denied" error "Permission denied"
 expect_shell "gh pr review 1 --approve" error "Permission denied"
 expect_shell "gh pr comment 1 --body hi" completed "fake-gh-ran pr comment 1"
+expect_shell "opencode run hi" error "Permission denied"
+expect_call subagent general error "Permission denied"
 
 [ -z "$(ls -A "$TMP/state")" ] && pass "runner left no disposable state" \
   || fail "runner left state: $(ls "$TMP/state")"
