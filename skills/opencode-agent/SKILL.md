@@ -11,7 +11,8 @@ authority doctrine live there.
 
 ## Check the transport
 
-Treat installed help as authoritative:
+This skill targets OpenCode 2 (verified against 2.0.28). Treat installed help
+as authoritative:
 
 ```bash
 opencode --version
@@ -39,11 +40,16 @@ cd /absolute/path/to/workspace && \
   opencode run --format json --model opencode/<model> "TASK"
 ```
 
+Pass the task as a plain argument, not after `--`: OpenCode 2 sends anything
+after `--` twice. Select a variant in the model, as `opencode/<model>#high`.
+`run` attaches to the user's background OpenCode service unless given
+`--standalone`.
 
 Capture `sessionID` from the first JSON event. Resume the same session with
 `--session SESSION_ID`; add `--fork` when follow-up work must branch from it.
-On completion require a successful process exit, no error event or failed tool,
-and a final `step_finish` whose reason is `stop`. The calling agent owns
+On completion require a successful process exit and no error event or failed
+tool. OpenCode 2 exits nonzero when a step fails or the run is interrupted,
+and does not always emit a final `step_finish`. The calling agent owns
 monitoring and termination.
 
 ## Profiled dispatch
@@ -59,10 +65,14 @@ For running limited opencode sessions based on particular profiles use
 ```
 
 Add `--variant high` before `--` when the review calls for high effort. The
-runner passes the optional variant to OpenCode, which reports an error if the
-selected model does not support it. `--agent` picks another primary agent from
-the profile; the runner refuses subagents, which OpenCode would otherwise
-silently swap for its default agent.
+runner passes it to OpenCode in the model, as `opencode/<model>#high`. The
+prompt must not start with `-`. `--agent` picks another primary agent from the
+profile; the runner refuses subagents, which OpenCode would otherwise silently
+swap for its default agent.
+
+The runner starts OpenCode with `--standalone`, a private server inside the
+sandbox, so a profiled run never attaches to the user's background service and
+its config and credentials.
 
 The runner mounts the workspace read-only at its own path, and a linked
 worktree's repository git dir with it, so `git` and `gh` work inside as they do
@@ -75,15 +85,15 @@ those waits:
   headers and between stream chunks. OpenCode retries a timed-out request a
   few times, then emits an error event and exits nonzero. Timeouts the profile
   sets for that provider win.
-- When OpenCode logs a provider rate limit or overload (429, 503, 529) and
-  then emits no event for `--rate-limit-grace SECONDS` (default 60), the
-  runner prints the logged error and exits 76 instead of waiting out
-  OpenCode's silent retries.
-  Retry later or dispatch another provider.
 - A run with no event for `--idle-timeout SECONDS` (default 1800) is stopped
-  with exit 75, after the runner prints what OpenCode was waiting on (its
-  stdin, kernel wait channel and TCP connections) and its log tail. Treat 75
-  as a failed run and report those lines rather than retrying blindly.
+  with exit 75, after the runner prints what each OpenCode process was waiting
+  on (its stdin, kernel wait channel and TCP connections) and the log tail.
+  Treat 75 as a failed run and report those lines rather than retrying
+  blindly.
+- OpenCode 2 waits out a provider's rate limit or overload silently, honoring
+  retry-after up to 15 minutes for up to ten retries, and logs nothing. A
+  rate-limited run therefore ends at the idle timeout. Lower `--idle-timeout`
+  when a fast fallback to another provider matters more than waiting.
 
 ### available profiles
 

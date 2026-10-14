@@ -36,11 +36,6 @@ if [ "${1:-}" = --help ]; then
 fi
 printf '%s\n' "$@" > "$BWRAP_ARGS"
 readlink /proc/$$/fd/0 > "$BWRAP_ARGS.stdin"
-if [ -n "${FAKE_BWRAP_LOG:-}" ]; then
-  state="$(printf '%s\n' "$@" | awk 'previous == "--bind" { print; exit } { previous=$0 }')"
-  mkdir -p "$state/data/opencode/log" || exit 98
-  printf '%s\n' "$FAKE_BWRAP_LOG" >> "$state/data/opencode/log/opencode.log"
-fi
 [ -z "${FAKE_BWRAP_EVENT:-}" ] || printf '%s\n' "$FAKE_BWRAP_EVENT"
 if [ -n "${FAKE_BWRAP_SLOW_EVENT:-}" ]; then
   printf '%s' "${FAKE_BWRAP_SLOW_EVENT:0:10}"
@@ -48,9 +43,10 @@ if [ -n "${FAKE_BWRAP_SLOW_EVENT:-}" ]; then
   printf '%s\n' "${FAKE_BWRAP_SLOW_EVENT:10}"
 fi
 if [ -n "${FAKE_BWRAP_STALL:-}" ]; then
-  # A sleep named opencode stands in for the sandboxed process.
-  "$FAKE_SANDBOXED" "${FAKE_BWRAP_STALL_SECONDS:-30}" <&0 &
-  trap 'kill $!; exit 143' TERM
+  # Sleeps named opencode stand in for the run client and its standalone server.
+  "$FAKE_SANDBOXED" 30 <&0 & client=$!
+  "$FAKE_SANDBOXED" 30 <&0 & server=$!
+  trap 'kill $client $server; exit 143' TERM
   wait
 fi
 exit "${FAKE_BWRAP_EXIT:-0}"
@@ -96,13 +92,17 @@ grep -Fxq -- "openrouter/example-model" "$TMP/bwrap.args" \
   && pass "runner selects the requested model" || fail "model missing"
 grep -Fxq -- "review issue 18" "$TMP/bwrap.args" \
   && pass "runner forwards the prompt" || fail "prompt missing"
-if grep -Fxq -- "--variant" "$TMP/bwrap.args"; then
+if grep -q '#' "$TMP/bwrap.args"; then
   fail "runner adds a variant when none was requested"
 else
   pass "runner leaves the model's default variant alone"
 fi
-[ "$(tail -n 2 "$TMP/bwrap.args" | head -n 1)" = -- ] \
-  && pass "runner separates the prompt from OpenCode flags" || fail "prompt has no option boundary"
+# OpenCode 2 sends anything after its "--" twice, and has no --pure.
+[ "$(tail -n 1 "$TMP/bwrap.args")" = "review issue 18" ] && ! grep -Fxq -- "--" "$TMP/bwrap.args" \
+  && pass "runner passes the prompt once, as the last argument" || fail "prompt is not a plain last argument"
+grep -Fxq -- "--standalone" "$TMP/bwrap.args" && ! grep -Fxq -- "--pure" "$TMP/bwrap.args" \
+  && pass "runner starts a private OpenCode server, not the background service" \
+  || fail "runner may attach to the background service"
 grep -Fxq -- "$FAKE_DATA/opencode/auth.json" "$TMP/bwrap.args" \
   && grep -Fxq -- "/state/data/opencode/auth.json" "$TMP/bwrap.args" \
   && pass "runner mounts stored provider credentials" || fail "provider credential mount missing"
@@ -110,7 +110,7 @@ grep -Fxq -- "$FAKE_HOME/.config/gh" "$TMP/bwrap.args" \
   && grep -Fxq -- "/state/config/gh" "$TMP/bwrap.args" \
   && pass "runner mounts stored gh authentication" || fail "gh authentication mount missing"
 awk 'previous ~ /opencode-profile\..*\/state\/config\/opencode$/ && $0 == "/state/config/opencode" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
-  && pass "OpenCode config directory is read-only, so no per-run plugin install" \
+  && pass "OpenCode config directory is read-only" \
   || fail "OpenCode config directory is writable"
 
 state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
@@ -151,7 +151,7 @@ RUNNER="$TMP/skills/opencode-agent/scripts/run-profiled.sh" run_runner --workspa
   && pass "profile provider options win over runner timeouts" \
   || fail "profile provider options: $(config_arg | jq -c '.provider.openrouter.options')"
 
-# The requested model variant reaches OpenCode as an argument, not prompt text.
+# The requested model variant reaches OpenCode in the model, not prompt text.
 rm -f "$TMP/bwrap.args"
 rc=0
 run_runner --workspace "$WS" --profile github-pr-reviewer \
@@ -159,10 +159,10 @@ run_runner --workspace "$WS" --profile github-pr-reviewer \
 [ "$rc" -eq 0 ] || fail "variant dispatch exited $rc (want 0)"
 awk 'previous == "--agent" && $0 == "reviewer" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
   && pass "runner forwards the selected agent alongside the variant" || fail "selected agent missing"
-awk 'previous == "--variant" && $0 == "high" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
+awk 'previous == "--model" && $0 == "openrouter/example-model#high" { found=1 } { previous=$0 } END { exit !found }' "$TMP/bwrap.args" \
   && pass "runner forwards the requested model variant" || fail "model variant missing"
-[ "$(tail -n 2 "$TMP/bwrap.args" | head -n 1)" = -- ] \
-  && pass "variant stays before the prompt boundary" || fail "variant reached the prompt"
+[ "$(tail -n 1 "$TMP/bwrap.args")" = "review issue 18" ] \
+  && pass "variant stays out of the prompt" || fail "variant reached the prompt"
 
 rm -f "$TMP/bwrap.args"
 rc=0
@@ -170,6 +170,14 @@ run_runner --workspace "$WS" --profile github-pr-reviewer \
   --model openrouter/example-model --variant "" -- "task" >/dev/null 2>&1 || rc=$?
 [ "$rc" -eq 2 ] && [ ! -f "$TMP/bwrap.args" ] \
   && pass "empty explicit variant is refused before launch" || fail "empty variant refusal: rc=$rc"
+
+# Without "--", OpenCode would read a leading dash as its own flag.
+rm -f "$TMP/bwrap.args"
+rc=0
+run_runner --workspace "$WS" --profile github-pr-reviewer \
+  --model openrouter/example-model -- "--help" >/dev/null 2>&1 || rc=$?
+[ "$rc" -eq 2 ] && [ ! -f "$TMP/bwrap.args" ] \
+  && pass "prompt starting with a dash is refused before launch" || fail "dash prompt refusal: rc=$rc"
 
 # The workspace keeps its own path, and a linked worktree also gets its
 # repository's git dir, so git and gh resolve the repository in the sandbox.
@@ -225,79 +233,6 @@ out="$(FAKE_BWRAP_SLOW_EVENT='{"type":"text","part":{"text":" a \\ b "}}' run_ru
 [ "$out" = '{"type":"text","part":{"text":" a \\ b "}}' ] \
   && pass "runner reassembles a slowly written event" || fail "slow event mangled: $out"
 
-# A logged rate limit followed by silence stops the run instead of waiting out retry-after.
-rate_limit_log='timestamp=2026-09-28T21:56:25.444Z level=ERROR run=ed6a999c message="stream error" providerID=openrouter modelID=z-ai/glm-5.3-flash session.id=ses_1 small=false agent=reviewer mode=primary error.error="AI_APICallError: Rate limit exceeded"'
-rm -f "$TMP/bwrap.args"
-rc=0
-started=$SECONDS
-err="$(FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$rate_limit_log" run_runner --workspace "$WS" \
-  --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 1 -- "task" 2>&1 >/dev/null)" || rc=$?
-state_root="$(awk 'previous == "--bind" && $0 ~ /opencode-profile\./ { print; exit } { previous=$0 }' "$TMP/bwrap.args")"
-[ "$rc" -eq 76 ] && [ $((SECONDS - started)) -lt 10 ] && grep -Fq -- "$rate_limit_log" <<< "$err" \
-  && pass "rate-limited run exits 76 and shows the logged error" \
-  || fail "rate-limited run: rc=$rc after $((SECONDS - started))s: $err"
-[ -n "$state_root" ] && [ ! -e "$state_root" ] \
-  && pass "rate-limited run state is removed" || fail "rate-limited run left state: $state_root"
-
-# A rate-limit line without small=, and an overload, count the same way.
-expect_limited() {
-  rc=0
-  FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$2" run_runner --workspace "$WS" \
-    --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 1 --idle-timeout 6 \
-    -- "task" >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 76 ] && pass "$1 exits 76" || fail "$1: rc=$rc"
-}
-expect_limited "rate limit without small=" "${rate_limit_log/ small=false/}"
-expect_limited "provider overload" "${rate_limit_log/Rate limit exceeded/Service Unavailable (503): overloaded}"
-
-# Events carry OpenCode's epoch-ms timestamps; the logged error is at ...585444.
-event_before='{"type":"step_start","timestamp":1790632585400,"sessionID":"ses_1"}'
-event_after='{"type":"step_start","timestamp":1790632585500,"sessionID":"ses_1"}'
-
-# An event emitted before the error does not hide it, even when read before the
-# runner scans the error. The fake writes the error, then the event, then goes
-# silent, all within milliseconds of opening the event pipe. The runner scans
-# the log only after a read returns, so it reads the event first.
-rc=0
-FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$rate_limit_log" FAKE_BWRAP_EVENT="$event_before" \
-  run_runner --workspace "$WS" --profile github-pr-reviewer --model openrouter/example-model \
-  --rate-limit-grace 1 --idle-timeout 6 -- "task" >/dev/null 2>&1 || rc=$?
-[ "$rc" -eq 76 ] && pass "an error logged after an event read before the scan still counts" \
-  || fail "event, then error, read in reverse: rc=$rc"
-
-# An event emitted after the error, read before the scan, is progress: the
-# error is dropped and the silence that follows is an idle stop, not 76.
-rc=0
-FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$rate_limit_log" FAKE_BWRAP_EVENT="$event_after" \
-  run_runner --workspace "$WS" --profile github-pr-reviewer --model openrouter/example-model \
-  --rate-limit-grace 1 --idle-timeout 3 -- "task" >/dev/null 2>&1 || rc=$?
-[ "$rc" -eq 75 ] && pass "an event newer than the error clears it before it is scanned" \
-  || fail "error, then newer event, then silence: rc=$rc"
-
-# An event that completes after the error was scanned clears it only if it was
-# emitted after the error. The event starts at once (so the error is scanned on
-# the first one-second wake) and completes 2.5 s later, well inside the grace.
-rc=0
-FAKE_BWRAP_STALL=1 FAKE_BWRAP_STALL_SECONDS=4 FAKE_BWRAP_LOG="$rate_limit_log" \
-  FAKE_BWRAP_SLOW_EVENT="$event_after" run_runner --workspace "$WS" \
-  --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 3 \
-  -- "task" >/dev/null 2>&1 || rc=$?
-[ "$rc" -eq 0 ] && pass "an event after a scanned error keeps the run going" \
-  || fail "error then progress: rc=$rc"
-rc=0
-FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="$rate_limit_log" FAKE_BWRAP_SLOW_EVENT="$event_before" \
-  run_runner --workspace "$WS" --profile github-pr-reviewer --model openrouter/example-model \
-  --rate-limit-grace 3 --idle-timeout 8 -- "task" >/dev/null 2>&1 || rc=$?
-[ "$rc" -eq 76 ] && pass "an older event read after a scanned error does not clear it" \
-  || fail "older event after scanned error: rc=$rc"
-
-# A rate-limited title request does not block the run, so it is not a stop reason.
-rc=0
-FAKE_BWRAP_STALL=1 FAKE_BWRAP_LOG="${rate_limit_log/small=false/small=true}" run_runner --workspace "$WS" \
-  --profile github-pr-reviewer --model openrouter/example-model --rate-limit-grace 1 --idle-timeout 4 \
-  -- "task" >/dev/null 2>&1 || rc=$?
-[ "$rc" -eq 75 ] && pass "title rate limit falls through to the idle watchdog" || fail "title rate limit: rc=$rc"
-
 # A silent run is stopped at the idle timeout rather than hanging.
 rm -f "$TMP/bwrap.args"
 rc=0
@@ -311,6 +246,8 @@ grep -Eq 'OpenCode pid [0-9]+ stdin: /dev/null' <<< "$err" \
   && grep -Eq 'OpenCode pid [0-9]+ wchan: .' <<< "$err" \
   && grep -Eq 'OpenCode pid [0-9]+ established TCP connections:' <<< "$err" \
   && pass "stall report shows what OpenCode was waiting on" || fail "stall report missing: $err"
+[ "$(grep -Eo 'OpenCode pid [0-9]+ stdin' <<< "$err" | sort -u | wc -l)" -eq 2 ] \
+  && pass "stall report covers the run client and its server" || fail "stall report misses a process: $err"
 [ -n "$state_root" ] && [ ! -e "$state_root" ] \
   && pass "stalled run state is removed" || fail "stalled run left state: $state_root"
 

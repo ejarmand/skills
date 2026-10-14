@@ -5,9 +5,10 @@
 # OpenAI-compatible provider, so no network or provider account is needed:
 # the profile's openrouter baseURL points at the fake, and throwaway
 # credentials stand in for the stored ones. Checks that an open stdin pipe no longer
-# hangs, that a provider which never answers ends in a clean error, that a
-# long retry-after on a 429 or 503 exits 76, and that the idle watchdog reports
-# what OpenCode was waiting on. Takes about two minutes.
+# hangs, that the prompt reaches the provider once, that a provider which never
+# answers ends in a clean error, that the idle watchdog reports what OpenCode
+# was waiting on, and that a long retry-after on a 429 ends at that watchdog.
+# Takes about two minutes.
 set -u -o pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)" || exit 1
@@ -38,13 +39,15 @@ git -C "$TMP/ws" init -q && echo hello > "$TMP/ws/README" && git -C "$TMP/ws" ad
 cat > "$TMP/fakeprov.py" <<'PY'
 # Fake OpenAI-compatible provider. MODE ok: stream "OK"; hang: accept and never
 # answer; 429 or 503: rate limit or overload with a 900 s retry-after. Writes
-# its port to argv[2].
+# its port to argv[2], and request lines and bodies to argv[3].
 import http.server, json, sys, time
 mode = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     def do_POST(self):
-        self.rfile.read(int(self.headers.get("content-length", 0)))
+        body = self.rfile.read(int(self.headers.get("content-length", 0)))
+        with open(sys.argv[3], "ab") as log:
+            log.write(body + b"\n")
         if mode == "hang":
             time.sleep(3600)
         if mode in ("429", "503"):
@@ -110,11 +113,15 @@ run_live
 [ "$rc" -eq 0 ] && grep -q '"type":"text"' "$TMP/out" && [ -s "$TMP/requests" ] \
   && pass "open stdin pipe: run reached the provider and finished in ${elapsed}s" \
   || fail "open stdin pipe: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
+# Title generation sends the prompt too, so count within each request.
+most="$(awk '{ n = gsub(/Reply with the single word OK\./, ""); if (n > max) max = n } END { print max + 0 }' "$TMP/requests")"
+[ "$most" -eq 1 ] && pass "each request carries the prompt once" \
+  || fail "a request carried the prompt $most times"
 
 start_provider hang
 run_live --provider-timeout 5
 [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ] && [ "$rc" -ne 75 ] && grep -q '"type":"error"' "$TMP/out" \
-  && pass "silent provider: clean exit $rc in ${elapsed}s: $(grep -o '"name":"[A-Za-z]*"' "$TMP/out" | head -n 1)" \
+  && pass "silent provider: clean exit $rc in ${elapsed}s: $(grep -o '"message":"[^"]*"' "$TMP/out" | head -n 1)" \
   || fail "silent provider: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
 
 run_live --provider-timeout 600 --idle-timeout 10
@@ -124,17 +131,12 @@ grep -q 'stdin: /dev/null' "$TMP/err" && grep -q "127.0.0.1:$(cat "$TMP/port")" 
   || fail "idle watchdog: rc=$rc after ${elapsed}s: $(cat "$TMP/err")"
 sed -n '/stdin:/,/Log tail/p' "$TMP/err" | sed 's/^/    /'
 
+# OpenCode 2 waits out retry-after without an event or a log line.
 start_provider 429
-run_live --rate-limit-grace 5
-[ "$rc" -eq 76 ] && grep -q 'Rate limit exceeded' "$TMP/err" \
-  && pass "rate-limited provider: exit 76 in ${elapsed}s" \
+run_live --idle-timeout 10
+[ "$rc" -eq 75 ] && [ "$(grep -c chat/completions "$TMP/requests")" -ge 1 ] \
+  && pass "rate-limited provider: idle watchdog exits 75 in ${elapsed}s" \
   || fail "rate-limited provider: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
-
-start_provider 503
-run_live --rate-limit-grace 5
-[ "$rc" -eq 76 ] && grep -q 'Service overloaded' "$TMP/err" \
-  && pass "overloaded provider: exit 76 in ${elapsed}s" \
-  || fail "overloaded provider: rc=$rc after ${elapsed}s: $(tail -n 5 "$TMP/err")"
 
 [ -z "$(ls -A "$TMP/state")" ] && pass "runner left no disposable state" \
   || fail "runner left state: $(ls "$TMP/state")"

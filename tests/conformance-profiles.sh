@@ -368,10 +368,11 @@ opencode_dispatch() {
 }
 
 run_opencode() {
-  # One profiled dispatch; emits the root's accumulated text. OpenCode can
-  # exit zero before a final response, so the JSON stream must end in a clean
-  # stop. Individual tool errors are retained because denial probes require
-  # them; their expected effects and report markers are asserted separately.
+  # One profiled dispatch; emits the root's accumulated text. OpenCode 2 exits
+  # nonzero on a failed step or interrupted run but need not emit a final
+  # step_finish, so a clean run is exit zero, no error event, and some text.
+  # Individual tool errors are retained because denial probes require them;
+  # their expected effects and report markers are asserted separately.
   local raw rc=0
   raw="$(opencode_dispatch "$1")" || rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -381,8 +382,6 @@ run_opencode() {
   jq -rs '
     if any(.[]; .type == "error" or .type == "session.error")
     then ("opencode stream contains an error event") | halt_error(1)
-    elif (([.[] | select(.type == "step_finish") | (.part.reason // "")] | last // "") != "stop")
-    then ("opencode stream has no final stop") | halt_error(1)
     else [.[] | select(.type == "text") | (.part.text // empty)]
          | join("")
          | if length == 0
