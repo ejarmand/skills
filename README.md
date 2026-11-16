@@ -11,9 +11,8 @@ lists the complete collection.
 - `same-page` — agree on the goal and scope with the user before planning
 - `grill` — interview the user about a plan until you share one understanding
 - `prototype` — answer one design question with throwaway code
-- `implement` — build a prepared spec or ticket test-first and commit the
-  verified result
-- `tdd` — build behavior in red → green slices
+- `implement` — build a prepared spec or ticket, prove each change, and commit
+  the verified result
 - `code-review` — review Standards and Spec as separate axes
 - `file-pr` — structure GitHub pull requests, issues, and comments
 

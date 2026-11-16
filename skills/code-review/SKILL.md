@@ -47,9 +47,9 @@ Send a single message with two subagents.
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong; (d) changes that break existing behaviour or callers — read the surrounding code, not just the diff. Quote the spec line for each finding in (a)–(c); for (d), cite the broken caller or behaviour. Under 400 words."
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong; (d) changes that break existing behaviour or callers — read the surrounding code, not just the diff; (e) changes with no stated or credible proof that they work. Quote the spec line for each finding in (a)–(c); for (d) and (e), cite the caller, behaviour, or hunk. Under 400 words."
 
-If the spec is missing, the Spec sub-agent reports only (d); note the missing spec in the final report.
+If the spec is missing, the Spec sub-agent reports only (d) and (e); note the missing spec in the final report.
 
 ### 5. Aggregate
 
