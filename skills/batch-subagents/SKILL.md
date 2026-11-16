@@ -10,7 +10,7 @@ Prompts/tasks should be pogramatically generatable from few dependant variables 
  - for each concept and chapter in a text book, the agent identifies all other related concepts (2 variables)
  - For each edge in a knowledge graph an agent reviews its validity (1 variable)
 
-Use the `cross-provider-subagent` skill for cli worker instructions
+Worker invocation per backend: [CODEX.md](CODEX.md), [OPENCODE.md](OPENCODE.md).
 
 ## Batch
 

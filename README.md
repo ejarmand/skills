@@ -41,15 +41,10 @@ lists the complete collection.
 
 ### Agent and review orchestration
 
-- `batch-subagents` — fan out many independent CLI agent workers in one shell
-  call
-- `claude-agent` — execute and resume independent headless Claude Code work
-- `codex-agent` — execute and resume independent Codex CLI work
-- `cursor-agent` — execute and resume independent Cursor Agent work
-- `opencode-agent` — execute OpenCode workers across model providers
-- `cross-provider-agent` — dispatch one bounded task to an external provider
-  under least authority, with named authority profiles
+- `batch-subagents` — fan out many independent Codex or OpenCode CLI workers
+  in one shell call
 - `pr-ping-pong` — rally implementation against cross-provider reviewers
+  through T3 Code delegation
 - `agent-resume` — message a Claude Code or Codex session when a job finishes
   or a timer fires, resuming it if it has closed
 
