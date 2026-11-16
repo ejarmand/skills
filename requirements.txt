@@ -7,7 +7,6 @@
 bash             # repository scripts and shell-driven skills
 claude           # claude-agent, cross-provider-agent, pr-ping-pong, agent-resume
 codex            # codex-agent, batch-luna-agents, cross-provider-agent, pr-ping-pong, agent-resume
-curl             # html-visualization
 cursor-agent     # cursor-agent, cross-provider-agent, pr-ping-pong
 date             # opencode-agent profiled runner rate-limit timestamps; GNU-compatible -d required
 gh               # GitHub work records, review, specification, ticket, and rally skills
@@ -15,8 +14,7 @@ git              # implementation, review, prototype, and orchestration skills
 jq               # cursor-agent and opencode-agent profiled runners
 litget           # research academic literature search
 md5sum           # cursor-agent profiled runner
-playwright-cli   # html-visualization, improve-codebase-architecture
-python3          # html-visualization, fix-steering, agent-resume, scripts/link-skills.sh
+python3          # fix-steering, agent-resume, scripts/link-skills.sh
 ss               # opencode-agent profiled runner stall report
 stat             # cursor-agent and opencode-agent profiled runners; GNU-compatible options required
 systemctl        # agent-resume list and cancel
