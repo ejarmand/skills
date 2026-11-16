@@ -6,7 +6,7 @@ description: Review the changes since a fixed point (commit, branch, tag, or mer
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards** — does the code conform to this repo's documented coding standards?
-- **Spec** — does the code faithfully implement the originating issue / PRD / spec?
+- **Spec** — does the code faithfully implement the originating issue / PRD / spec, without breaking what already works?
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
@@ -47,9 +47,9 @@ Send a single message with two subagents.
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong; (d) changes that break existing behaviour or callers — read the surrounding code, not just the diff. Quote the spec line for each finding in (a)–(c); for (d), cite the broken caller or behaviour. Under 400 words."
 
-If the spec is missing, skip the Spec sub-agent and note this in the final report.
+If the spec is missing, the Spec sub-agent reports only (d); note the missing spec in the final report.
 
 ### 5. Aggregate
 

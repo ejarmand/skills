@@ -127,7 +127,15 @@ churn or regress. Adjudicate the returned reports against the code:
 - **Reject** — wrong, out of scope, or a style preference. Post a brief reply on
   the PR saying which finding and why.
 
-Where reviewers disagree, use your judgement 
+Where reviewers disagree, use your judgement.
+
+If review fixes grew the diff since the last rally (`git diff --shortstat
+BASE_OID...HEAD_OID`), tell the implementer to cut first: delete or narrow
+rather than add a helper, guard, or option.
+
+A finding you rejected that a reviewer raises again for a second rally goes to
+the user: state both sides in two or three lines each in the report, and stop
+sending it back to that reviewer.
 
 ## Stopping
 
