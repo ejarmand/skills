@@ -6,7 +6,7 @@ description: Review the changes since a fixed point (commit, branch, tag, or mer
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards** — does the code conform to this repo's documented coding standards?
-- **Spec** — does the code faithfully implement the originating issue / PRD / spec?
+- **Spec** — does the code faithfully implement the originating issue / PRD / spec, without breaking what already works?
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
@@ -14,17 +14,18 @@ Both axes run as **parallel sub-agents** so they don't pollute each other's cont
 
 ### 1. Pin the fixed point
 
-Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it.
+Whatever the user said is the fixed point, generally a branch, pr, or checkout.
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
-Before going further, confirm the fixed point resolves and the diff is non-empty. If the caller supplied pinned OIDs, use them as the fixed point and `HEAD`. Otherwise `git show --no-patch --format=fuller <fixed-point>` confirms the ref. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
+Before going further, confirm the fixed point resolves and the diff is non-empty.
 
 ### 2. Identify the spec source
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, etc.) — fetch per the work-record contract in [`../wayfinder/WORK-RECORDS.md`](../wayfinder/WORK-RECORDS.md).
+1. Issue references in the commit messages (`#123`, `Closes #45`, etc.) fetch per the work-record contract in [`../wayfinder/WORK-RECORDS.md`](../wayfinder/WORK-RECORDS.md).
+
 2. A path the user passed as an argument.
 
 ### 3. Identify the standards sources
@@ -41,15 +42,15 @@ Send a single message with two subagents.
 
 - The full diff command and commit list.
 - The list of standards-source files you found in step 3, **plus the full contents of `../codebase-design/STANDARD.md`** pasted into the prompt. 
-- The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any violation of the pasted unified standard: name the rule or smell and quote the hunk. Apply the standard's binding rules. Under 400 words."
+- The brief: "Report - per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any violation of the pasted unified standard: name the rule or smell and quote the hunk. Apply the standard's binding rules. Under 400 words."
 
 **Spec sub-agent prompt** — include:
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong; (d) changes that break existing behaviour or callers — read the surrounding code, not just the diff; (e) changes with no stated or credible proof that they work. Quote the spec line for each finding in (a)–(c); for (d) and (e), cite the caller, behaviour, or hunk. Under 400 words."
 
-If the spec is missing, skip the Spec sub-agent and note this in the final report.
+If the spec is missing, the Spec sub-agent reports only (d) and (e); note the missing spec in the final report.
 
 ### 5. Aggregate
 

@@ -48,6 +48,18 @@ Each reads *what it is* → *how to fix*; match against the diff:
 - **Refused Bequest** — a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
 - **Permissive internal interfaces** — extensive checking or reformatting for an interface we control -> simplify to a single expected schema, remove any checks or formatting that allow divergent inputs.
 
+## Tests
+
+- **Test at the highest seam that observes the behaviour**, preferring seams
+  the spec or codebase already has.
+- **Mock only what you don't control** — third-party services, time,
+  randomness. Mocking your own modules couples the test to internals.
+- **Expected values come from an independent source**: a known literal, a
+  worked example, the spec. A test that recomputes the answer the way the code
+  does passes by construction.
+- **Every kept test has been seen failing** without the change it covers.
+- **No test or guard the intent doesn't need.**
+
 ## Boundary rules
 - **Let underlying packages raise.** Don't catch, wrap, or translate an error
   unless the added context truly adds value.
