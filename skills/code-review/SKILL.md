@@ -20,8 +20,6 @@ Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so th
 
 Before going further, confirm the fixed point resolves and the diff is non-empty. If the caller supplied pinned OIDs, use them as the fixed point and `HEAD`. Otherwise `git show --no-patch --format=fuller <fixed-point>` confirms the ref. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
 
-Issue each shell command on its own, not chained with `&&`, `;`, or `|`. Every review profile allows `git diff`, `git log`, `git show`, and `git status`; some also allow a few other read-only git subcommands, but chained commands can be denied.
-
 ### 2. Identify the spec source
 
 Look for the originating spec, in this order:
@@ -55,6 +53,6 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 
 ### 5. Aggregate
 
-Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned, keeping each finding on its own axis — never merged, reranked, or resolved to a single winner across axes (see _Why two axes_).
+Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned, keeping each finding on its own axis — never merged, reranked, or resolved to a single winner across axes.
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any).
