@@ -9,6 +9,7 @@ lists the complete collection.
 ### Routing and implementation flow
 
 - `same-page` — agree on the goal and scope with the user before planning
+- `in-your-own-words` — restate the user's goals and the problem being solved
 - `grill` — interview the user about a plan until you share one understanding
 - `prototype` — answer one design question with throwaway code
 - `implement` — build a prepared spec or ticket, prove each change, and commit
@@ -25,6 +26,8 @@ lists the complete collection.
   resolve them one at a time
 - `codebase-design` — shared deep-module vocabulary
 - `improve-codebase-architecture` — find and present deepening opportunities
+- `retro` — review a coding session and suggest changes to the agent's
+  environment
 - `laziness-protocol` — prefer deletion and the smallest diff that solves the
   problem
 - `fix-steering` — audit session corrections and recommend prevention changes
@@ -32,16 +35,24 @@ lists the complete collection.
 ### Writing and visualization
 
 - `bro` — restate the last response in plain, concise language
+- `ketchup` — catch the user up on what changed in the chat and what waits on
+  them
 - `unslop` — remove AI writing patterns and improve legibility
 - `writing-great-skills` — reference for authoring and editing skills
 - `html-visualization` — build HTML diagrams, process maps, timelines,
   comparisons, and interactive explainers, checking each render with
   screenshots
+- `statechart` — check a TLA+ model of a system and draw it as a Mermaid
+  statechart
 
 ### Agent and review orchestration
 
 - `batch-subagents` — fan out many independent Codex or OpenCode CLI workers
   in one shell call
+- `council` — get review from three models on different providers and loop
+  until they agree
+- `show-me-your-work` — keep a decision log for long-running or unattended
+  work
 - `pr-ping-pong` — rally implementation against cross-provider reviewers
   through T3 Code delegation
 - `agent-resume` — message a Claude Code or Codex session when a job finishes
@@ -114,7 +125,16 @@ Matt Pocock's MIT license is preserved at
 `vendor/mattpocock-skills-LICENSE`. The exact promoted set is recorded in
 `vendor/mattpocock-skills-SNAPSHOT.md`.
 
-The promoted snapshot is limited to skills named by the upstream router at that
+`retro` was added later from a newer commit, recorded in the same file.
+
+Four skills come from [`cursor/plugins`](https://github.com/cursor/plugins)'s
+`pstack` at commit `bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7`, and `council`
+comes from [`t3dotgg/tstack`](https://github.com/t3dotgg/tstack) at commit
+`11e37a74d0a6868c121cd0910ab2b3bd9873b92a`. Their MIT licenses are preserved
+at `vendor/pstack-LICENSE` and `vendor/tstack-LICENSE`, and the promoted sets
+are recorded in `vendor/pstack-SNAPSHOT.md` and `vendor/tstack-SNAPSHOT.md`.
+
+The Matt Pocock snapshot is limited to skills named by the upstream router at that
 commit. Upstream plugin manifests, marketplace metadata, docs, changesets,
 `deprecated/`, and `in-progress/` distribution buckets are intentionally not
 part of this repository.

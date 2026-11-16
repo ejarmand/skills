@@ -32,3 +32,8 @@ Each listed directory was copied in full, including its references, templates,
 scripts, and agent metadata. Upstream plugin manifests, marketplace metadata,
 docs, changesets, `deprecated/`, `in-progress/`, and router-unmentioned skills
 were not promoted.
+
+Added later:
+
+- `retro`, copied unedited from commit
+  `5863806dd4e15c63174bee4e7515a4256792ecfa` on 2026-11-16.

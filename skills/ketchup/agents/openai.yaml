@@ -1,0 +1,5 @@
+interface:
+  display_name: "Ketchup"
+  short_description: "Catch the user up on what changed and what waits on them"
+policy:
+  allow_implicit_invocation: false
