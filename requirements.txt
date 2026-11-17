@@ -10,8 +10,6 @@ codex            # batch-subagents, agent-resume
 gh               # GitHub work records, review, specification, ticket, and rally skills
 git              # implementation, review, prototype, and orchestration skills
 litget           # research academic literature search
-mise             # statechart; installs TLC and Java on first run
-node             # statechart; Node 22.18+ or 23.6+, or bun or deno instead
 opencode         # batch-subagents
 python3          # fix-steering, agent-resume, scripts/link-skills.sh
 systemctl        # agent-resume list and cancel

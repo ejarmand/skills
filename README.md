@@ -42,8 +42,6 @@ lists the complete collection.
 - `html-visualization` — build HTML diagrams, process maps, timelines,
   comparisons, and interactive explainers, checking each render with
   screenshots
-- `statechart` — check a TLA+ model of a system and draw it as a Mermaid
-  statechart
 
 ### Agent and review orchestration
 
@@ -127,7 +125,7 @@ Matt Pocock's MIT license is preserved at
 
 `retro` was added later from a newer commit, recorded in the same file.
 
-Four skills come from [`cursor/plugins`](https://github.com/cursor/plugins)'s
+Three skills come from [`cursor/plugins`](https://github.com/cursor/plugins)'s
 `pstack` at commit `bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7`, and `council`
 comes from [`t3dotgg/tstack`](https://github.com/t3dotgg/tstack) at commit
 `11e37a74d0a6868c121cd0910ab2b3bd9873b92a`. Their MIT licenses are preserved
