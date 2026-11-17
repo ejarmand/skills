@@ -35,5 +35,6 @@ were not promoted.
 
 Added later:
 
-- `retro`, copied unedited from commit
-  `5863806dd4e15c63174bee4e7515a4256792ecfa` on 2026-11-16.
+- `retro`, copied from commit `5863806dd4e15c63174bee4e7515a4256792ecfa` on
+  2026-11-16. Local edit: `writing-for-agents` became `writing-great-skills`,
+  read by path because that skill is user-invoked only.
