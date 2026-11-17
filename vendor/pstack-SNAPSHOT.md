@@ -18,3 +18,5 @@ Local edits since the copy:
 
 - `ketchup`: `/visualize` became `/html-visualization`, this repo's chart and
   diagram skill.
+- `show-me-your-work`: dropped the citations of `encode-lessons-in-structure`
+  and `poteto-mode`, which this repo lacks, and the Cursor transcript path.
